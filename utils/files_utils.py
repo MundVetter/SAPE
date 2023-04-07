@@ -14,7 +14,7 @@ import plyfile
 
 
 def get_source_path():
-    return sys.argv[1]
+    return "assets/images/chibi.jpg"
 
 
 def export_image(image: Union[T, ARRAY], path: str):

@@ -3,7 +3,7 @@ from custom_types import *
 from models import encoding_controler, encoding_models
 from utils import files_utils, train_utils, image_utils
 import constants
-
+import matplotlib.pyplot as plt
 
 def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY):
     model.eval()
@@ -78,15 +78,16 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
 
 def main() -> int:
     device = CUDA(0)
+    print(device)
     image_path = files_utils.get_source_path()
     name = files_utils.split_path(image_path)[1]
     scale = .25
-    group = init_source_target(image_path, name, scale=scale, max_res=512, square=False)
+    group = init_source_target(image_path, name, scale=scale, max_res=512, square=False, non_uniform_sampling=True)
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_freqs=256,
                                                hidden_dim=256, std=20., num_layers=3)
-    control_params = encoding_controler.ControlParams(num_iterations=5000, epsilon=1e-3, res=128)
-    encoding_types = (EncodingType.NoEnc, EncodingType.FF, EncodingType.FF)
-    controller_types = (ControllerType.NoControl, ControllerType.NoControl, ControllerType.SpatialProgressionStashed)
+    control_params = encoding_controler.ControlParams(num_iterations=5000, epsilon=1e-3, res=2)
+    encoding_types = [EncodingType.FF]
+    controller_types = [ControllerType.SpatialProgressionStashed]
     for encoding_type, controller_type in zip(encoding_types, controller_types):
         optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
                  50, verbose=True)

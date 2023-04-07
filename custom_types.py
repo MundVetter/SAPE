@@ -34,10 +34,13 @@ CPU = torch.device('cpu')
 
 
 def get_device(device_id: int) -> D:
-    if not torch.cuda.is_available():
-        return CPU
-    device_id = min(torch.cuda.device_count() - 1, device_id)
-    return torch.device(f'cuda:{device_id}')
+    if torch.cuda.is_available():
+        device_id = min(torch.cuda.device_count() - 1, device_id)
+        return torch.device(f'cuda:{device_id}')
+    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        return torch.device("mps")
+    else:
+        return torch.device('cpu')
 
 
 CUDA = get_device
