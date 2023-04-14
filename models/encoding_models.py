@@ -3,7 +3,6 @@ import abc
 
 
 class ModelParams:
-
     def fill_args(self, **kwargs):
         for key, item in kwargs.items():
             if hasattr(self, key):
@@ -33,6 +32,12 @@ class MLP(nn.Module):
             if i < len(layers) - 2:
                 layers_.append(nn.ReLU(True))
         self.model = nn.Sequential(*layers_)
+
+class Sin(nn.Module):
+    def __init__(self):
+        super(Sin, self).__init__()
+    def forward(self, x):
+        return torch.cos(x)
 
 
 class EncodingLayer(nn.Module, abc.ABC):

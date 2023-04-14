@@ -5,10 +5,10 @@ import constants
 import PIL.ImageDraw as ImageDraw
 import PIL.Image as Image
 import imageio
-
+import matplotlib.pyplot as plt
+import copy
 
 class Function:
-
     def __call__(self, x: T) -> T:
         return self.function(x)
 
@@ -62,8 +62,6 @@ def export_poly(vs: Optional[T], dots: Optional[T], path: str, colors: Optional[
                 outline = None
             draw.ellipse((x - r, y - r, x + r, y + r), fill=fill, width=1, outline=outline)
 
-    # plt.imshow(V(image))
-    # plt.show()
     path = files_utils.add_suffix(path, '.png')
     files_utils.init_folders(path)
     # if not constants.DEBUG:
@@ -92,17 +90,77 @@ def init_source_target(func: Function, num_samples: int):
         labels = func.samples[:, 1].unsqueeze(-1)
     return vs_base, vs_in, labels, target_func
 
+def psine(x: T):
+    a,  c, b = .01, 4.5, 4
+
+    def f_(x_):
+        return a * (x_ * 2 + b) ** c
+
+    return .5 * torch.sin(f_(x))
+
+
+class MaskOptimizer:
+    def __init__(self, mask_model, frozen_model, weight_tensor, mask_lr=1e-4, lambda_cost=0.01):
+        self.mask_model = mask_model
+        self.frozen_model = frozen_model
+        self.optimizer = Optimizer(self.mask_model.parameters(), lr=mask_lr)
+        self.optimizer2 = Optimizer(self.frozen_model.parameters(), lr=mask_lr)
+        self.lambda_cost = lambda_cost
+        self.encoding_dim  = frozen_model.encoding_dim
+        self.weight_tensor = weight_tensor
+
+    def optimize_mask(self, vs_in, labels, num_iterations=1000):
+        # Freeze the parameters of the frozen model
+        # for param in self.frozen_model.parameters():
+        #     param.requires_grad = False
+
+        for i in range(num_iterations):
+            self.optimizer.zero_grad()
+            self.optimizer2.zero_grad()
+
+            mask_original = torch.sigmoid(self.mask_model(vs_in))
+            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 1)
+            ones = torch.ones_like(vs_in, device = vs_in.device)
+            mask = torch.cat([ones, mask], dim=-1)
+
+            frozen_model_output = self.frozen_model(vs_in, override_mask=mask)
+
+            mse_loss = nnf.mse_loss(frozen_model_output, labels)
+            
+            # Multiply the mask with the weight tensor before calculating the cost
+            weighted_mask = mask_original * self.weight_tensor
+            mask_cost = self.lambda_cost * weighted_mask.mean()
+            total_loss = mse_loss + mask_cost
+
+            if i % 100 == 0:
+                print(f'Iteration {i} - Loss: {total_loss.item()}')
+
+            total_loss.backward()
+            self.optimizer.step()
+            self.optimizer2.step()
+
+        # unfreeze the parameters of the frozen model
+        for param in self.frozen_model.parameters():
+            param.requires_grad = True
+        return mask
+
+
+
+
+
 
 def optimize(func: Function, encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controler.ControlParams,
              num_samples: int, device: D,
-             freq=500, verbose=False):
+             freq=500, verbose=False, mask = None, model = None):
     name = func.name
     vs_base, vs_in, labels, target_func = init_source_target(func, num_samples)
     vs_base, vs_in, labels, target_func = vs_base.to(device), vs_in.to(device), labels.to(device), target_func.to(
         device)
     lr = 1e-5
-    model = encoding_controler.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
+    if model is None:
+        model = encoding_controler.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
+
     tag = f'{encoding_type.value}_{controller_type.value}'
     if encoding_type is EncodingType.NoEnc:
         lr = 1e-4
@@ -113,7 +171,11 @@ def optimize(func: Function, encoding_type: EncodingType, model_params,
     export_poly(target_func, torch.cat((vs_in, labels), dim=1), f'{out_path}target.png', opacity=True)
     for i in range(control_params.num_iterations):
         opt.zero_grad()
-        out = model(vs_in)
+        if mask is None:
+            out = model(vs_in)
+        else:
+            out = model(vs_in, override_mask=mask)
+
         loss_all = nnf.mse_loss(out, labels, reduction='none')
         loss = loss_all.mean()
         loss.backward()
@@ -142,31 +204,53 @@ def optimize(func: Function, encoding_type: EncodingType, model_params,
                                filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
     if verbose:
         image_utils.gifed(f'{out_path}opt_{tag}/', .03, tag, reverse=False)
-        files_utils.delete_all(f'{out_path}opt_{tag}/', '.png',
-                               filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
-
-
-def psine(x: T):
-    a,  c, b = .01, 4.5, 4
-
-    def f_(x_):
-        return a * (x_ * 2 + b) ** c
-
-    return .5 * torch.sin(f_(x))
+        # files_utils.delete_all(f'{out_path}opt_{tag}/', '.png',
+                            #    filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
+    return model, vs_base, vs_in, labels
 
 
 def main() -> int:
     device = CUDA(0)
-    encoding_types = (EncodingType.NoEnc, EncodingType.FF, EncodingType.FF)
-    controller_types = (ControllerType.NoControl, ControllerType.NoControl, ControllerType.SpatialProgressionStashed)
+    encoding_type = EncodingType.FF
+    controller_type = ControllerType.GlobalProgression
     func = Function(psine)
     num_samples = 25
-    control_params = encoding_controler.ControlParams(num_iterations=20000, epsilon=1e-5, res=num_samples//2)
-    model_params = encoding_models.ModelParams(domain_dim=1, output_channels=1, num_freqs=256,
-                                               hidden_dim=32, std=5., num_layers=2)
+    control_params = encoding_controler.ControlParams(num_iterations=1, epsilon=1e-5, res=num_samples//2)
+    model_params = encoding_models.ModelParams(domain_dim=1, output_channels=1, num_frequencies=128,
+                                               hidden_dim=256, std=5., num_layers=2)
 
-    for encoding_type, controller_type in zip(encoding_types, controller_types):
-        optimize(func, encoding_type, model_params, controller_type, control_params, num_samples, device, freq=25, verbose=True)
+    model, vs_base, vs_in, labels = optimize(func, encoding_type, model_params, controller_type, control_params, num_samples, device, freq=500, verbose=True)
+    model_copy = copy.deepcopy(model)
+    control_params_2 = encoding_controler.ControlParams(num_iterations=8000, epsilon=1e-5, res=num_samples//2)
+    mask_model_params = encoding_models.ModelParams(domain_dim=1, output_channels=128, num_frequencies=128, hidden_dim=32, std=5., num_layers=2)
+    mask_model = encoding_controler.get_controlled_model(mask_model_params, encoding_type, control_params_2, controller_type).to(device)
+    weight_tensor = model.model.encode.frequencies.abs()
+    # insert zero weight
+    # weight_tensor = torch.cat( device=device), weight_tensor), dim=1)
+    mOpt = MaskOptimizer(mask_model, model, weight_tensor, lambda_cost=0.16)
+    mask = mOpt.optimize_mask(vs_in, labels, 8000).detach()
+
+    # model_2, vs_base, vs_in, labels = optimize(func, encoding_type, model_params, controller_type, control_params, num_samples, device, freq=500, verbose=True, mask=mask, model=model_copy)
+
+    base_mask = torch.sigmoid(mask_model(vs_base))
+    mask = torch.stack([base_mask, base_mask], dim=2).view(-1, 256)
+    ones = torch.ones_like(vs_base, device = vs_base.device)
+    mask = torch.cat([ones, mask], dim=-1) 
+
+    # pred2 = model_2(vs_base, override_mask=mask).detach().cpu().numpy()
+    pred = model(vs_base, override_mask=mask).detach().cpu().numpy()
+    pred_unmasked = model(vs_base).detach().cpu().numpy()
+
+
+    x = vs_base.cpu().numpy()
+    x1 = vs_in.cpu().numpy()
+    plt.plot(x1, labels.cpu().numpy(), 'o', label='target')
+    plt.plot(x, pred, label='pred mask')
+    # plt.plot(x, pred2, label='pred mask2')
+    # plt.plot(x, pred_unmasked, label='pred unmasked')
+    plt.legend()
+    plt.show()
+
     return 0
 
 
