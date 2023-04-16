@@ -3,6 +3,7 @@ from custom_types import *
 from models import encoding_controler, encoding_models
 from utils import files_utils, train_utils, image_utils
 import constants
+import copy
 import matplotlib.pyplot as plt
 
 def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY):
@@ -22,10 +23,54 @@ def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image:
     model.train()
     return out, hm
 
+class MaskOptimizer:
+    def __init__(self, mask_model, frozen_model, weight_tensor, mask_lr=1e-4, lambda_cost=0.01):
+        self.mask_model = mask_model
+        self.frozen_model = frozen_model
+        self.optimizer = Optimizer(self.mask_model.parameters(), lr=mask_lr)
+        self.lambda_cost = lambda_cost
+        self.encoding_dim  = frozen_model.encoding_dim
+        self.weight_tensor = weight_tensor
+
+    def optimize_mask(self, vs_in, labels, num_iterations=1000):
+        # Freeze the parameters of the frozen model
+        for param in self.frozen_model.parameters():
+            param.requires_grad = False
+
+        for i in range(num_iterations):
+            self.optimizer.zero_grad()
+
+            mask_original = torch.sigmoid(self.mask_model(vs_in))
+            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
+            ones = torch.ones_like(vs_in, device = vs_in.device)
+            mask = torch.cat([ones, mask], dim=-1)
+
+            frozen_model_output = self.frozen_model(vs_in, override_mask=mask)
+
+            mse_loss = nnf.mse_loss(frozen_model_output, labels, reduction='none')
+            mse_loss = mse_loss.mean()
+            
+            # Multiply the mask with the weight tensor before calculating the cost
+            weighted_mask = mask_original * self.weight_tensor
+            mask_cost = self.lambda_cost * weighted_mask.mean()
+            total_loss = mse_loss + mask_cost
+
+            if i % 100 == 0:
+                print(f'Iteration {i} - Loss: {total_loss.item()}')
+
+            total_loss.backward()
+            self.optimizer.step()
+
+
+        # unfreeze the parameters of the frozen model
+        for param in self.frozen_model.parameters():
+            param.requires_grad = True
+        return mask
+
 
 def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controler.ControlParams, group, device: D,
-             freq: int, verbose=False):
+             freq: int, verbose=False, mask=None, model=None):
 
     def shuffle_coords():
         nonlocal vs_in, labels
@@ -37,7 +82,8 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
     tag = f'{name}_{encoding_type.value}_{controller_type.value}'
     out_path = f'{constants.CHECKPOINTS_ROOT}/2d_images/{name}/'
     lr = 1e-3
-    model = encoding_controler.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
+    if model is None:
+        model = encoding_controler.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
     block_iterations = model.block_iterations
     vs_base, vs_in, labels, image_labels = vs_base.to(device), vs_in.to(device), labels.to(device), image_labels.to(device)
     opt = Optimizer(model.parameters(), lr=lr)
@@ -47,7 +93,10 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
         files_utils.export_image(masked_image, f'{out_path}target_masked.png')
     for i in range(control_params.num_iterations):
         opt.zero_grad()
-        out = model(vs_in)
+        if mask is None:
+            out = model(vs_in)
+        else:
+            out = model(vs_in, override_mask=mask)
         loss_all = nnf.mse_loss(out, labels, reduction='none')
         loss = loss_all.mean()
         loss.backward()
@@ -74,6 +123,7 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
                                    filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
         files_utils.delete_all(f'{out_path}opt_{tag}/', '.png',
                                filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
+    return model, vs_base, vs_in, labels
 
 
 def main() -> int:
@@ -82,15 +132,27 @@ def main() -> int:
     image_path = files_utils.get_source_path()
     name = files_utils.split_path(image_path)[1]
     scale = .25
-    group = init_source_target(image_path, name, scale=scale, max_res=512, square=False, non_uniform_sampling=True)
-    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_freqs=256,
+    group = init_source_target(image_path, name, scale=scale, max_res=512, square=False, non_uniform_sampling=False)
+    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                                hidden_dim=256, std=20., num_layers=3)
-    control_params = encoding_controler.ControlParams(num_iterations=5000, epsilon=1e-3, res=2)
-    encoding_types = [EncodingType.FF]
-    controller_types = [ControllerType.SpatialProgressionStashed]
-    for encoding_type, controller_type in zip(encoding_types, controller_types):
-        optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
+    control_params = encoding_controler.ControlParams(num_iterations=1000, epsilon=1e-3, res=2)
+    encoding_type = EncodingType.FF
+    controller_type = ControllerType.GlobalProgression
+    model, vs_base, vs_in, labels = optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
                  50, verbose=True)
+    model_copy = copy.deepcopy(model)
+    mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
+                                               hidden_dim=256, std=5., num_layers=3)
+    control_params_2 = encoding_controler.ControlParams(num_iterations=1000, epsilon=1e-5)
+    mask_model = encoding_controler.get_controlled_model(mask_model_params, encoding_type, control_params_2, ControllerType.NoControl).to(device)
+    weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5
+    optMask = MaskOptimizer(mask_model, model, weight_tensor, lambda_cost=0.05)
+    mask = optMask.optimize_mask(vs_in, labels, 500).detach()
+    mask2 = torch.ones_like(mask)
+
+    optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
+                 50, verbose=True, mask=mask2, model=model)
+
     return 0
 
 if __name__ == '__main__':
