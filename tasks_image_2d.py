@@ -5,26 +5,40 @@ from utils import files_utils, train_utils, image_utils
 import constants
 import copy
 import matplotlib.pyplot as plt
+import os
 
-def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY):
+def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, mask_model):
     model.eval()
     with torch.no_grad():
         if model.is_progressive:
-            out, mask = model(vs_in, get_mask=True)
+            if mask_model is not None:
+                _, mask = mask_model(vs_in)
+                # mask = torch.zeros_like(mask)
+                # mask[:, :512] = 1
+                # mask
+                out = model(vs_in, override_mask=mask)
+            else:
+                out, mask = model(vs_in, get_mask=True)
             if mask.dim() != out.dim():
                 mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
             hm = mask.sum(1) / mask.shape[1]
             hm = image_utils.to_heatmap(hm)
             hm = hm.view(*ref_image.shape[:-1], 3)
         else:
-            out = model(vs_in, get_mask=True)
+            if mask_model is not None:
+                mask = mask_model(vs_in)
+                out = model(vs_in, override_mask=mask)
+            else:
+                out = model(vs_in, get_mask=True)
             hm = None
         out = out.view(ref_image.shape)
     model.train()
+
     return out, hm
 
-class MaskOptimizer:
+class MaskModel(nn.Module):
     def __init__(self, mask_model, frozen_model, weight_tensor, mask_lr=1e-4, lambda_cost=0.01):
+        super().__init__()
         self.mask_model = mask_model
         self.frozen_model = frozen_model
         self.optimizer = Optimizer(self.mask_model.parameters(), lr=mask_lr)
@@ -32,19 +46,17 @@ class MaskOptimizer:
         self.encoding_dim  = frozen_model.encoding_dim
         self.weight_tensor = weight_tensor
 
-    def optimize_mask(self, vs_in, labels, num_iterations=1000):
+    def fit(self, vs_in, labels, device, num_iterations=1000, vs_base=None):
         # Freeze the parameters of the frozen model
         for param in self.frozen_model.parameters():
             param.requires_grad = False
 
+        logger = train_utils.Logger().start(num_iterations)
+        vs_in, labels = vs_in.to(device), labels.to(device)
         for i in range(num_iterations):
             self.optimizer.zero_grad()
 
-            mask_original = torch.sigmoid(self.mask_model(vs_in))
-            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
-            ones = torch.ones_like(vs_in, device = vs_in.device)
-            mask = torch.cat([ones, mask], dim=-1)
-
+            mask_original, mask = self.forward(vs_in)
             frozen_model_output = self.frozen_model(vs_in, override_mask=mask)
 
             mse_loss = nnf.mse_loss(frozen_model_output, labels, reduction='none')
@@ -54,23 +66,42 @@ class MaskOptimizer:
             weighted_mask = mask_original * self.weight_tensor
             mask_cost = self.lambda_cost * weighted_mask.mean()
             total_loss = mse_loss + mask_cost
+            logger.stash_iter('mse_train', mse_loss)
 
-            if i % 100 == 0:
-                print(f'Iteration {i} - Loss: {total_loss.item()}')
+            if i % 100 == 0 and vs_base is not None:
+                with torch.no_grad():
+                    class shape:
+                        def __init__(self):
+                            self.shape = [512, 512, 3]
+                    shape_obj = shape()
+                    out, hm = plot_image(self.frozen_model, vs_base.cuda(), shape_obj, self)
+                    name = 'chibi'
+                    tag = 'chibi_ff_no_control'
+                    out_path = f'{constants.CHECKPOINTS_ROOT}/2d_images/{name}/'
+                    files_utils.export_image(hm, f'{out_path}heatmap_{tag}/{i:04d}.png')
+                    files_utils.export_image(out, f'{out_path}opt_{tag}/{i:04d}.png')
 
             total_loss.backward()
             self.optimizer.step()
-
+            logger.reset_iter()
+        logger.stop()
 
         # unfreeze the parameters of the frozen model
         for param in self.frozen_model.parameters():
             param.requires_grad = True
         return mask
 
+    def forward(self, vs_in):
+        mask_original = torch.sigmoid(self.mask_model(vs_in))
+        mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
+        ones = torch.ones_like(vs_in, device = vs_in.device)
+        mask = torch.cat([ones, mask], dim=-1)
+        return mask_original ,mask
+
 
 def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controler.ControlParams, group, device: D,
-             freq: int, verbose=False, mask=None, model=None):
+             freq: int, verbose=False, mask=None, model=None, mask_model = None, lr=1e-3):
 
     def shuffle_coords():
         nonlocal vs_in, labels
@@ -81,7 +112,7 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
     vs_base, vs_in, labels, target_image, image_labels, masked_image = group
     tag = f'{name}_{encoding_type.value}_{controller_type.value}'
     out_path = f'{constants.CHECKPOINTS_ROOT}/2d_images/{name}/'
-    lr = 1e-3
+
     if model is None:
         model = encoding_controler.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
     block_iterations = model.block_iterations
@@ -99,22 +130,25 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
             out = model(vs_in, override_mask=mask)
         loss_all = nnf.mse_loss(out, labels, reduction='none')
         loss = loss_all.mean()
+        if i == 0:
+            print(loss)
         loss.backward()
         opt.step()
         model.stash_iteration(loss_all.mean(-1))
         logger.stash_iter('mse_train', loss)
-        shuffle_coords()
+        # shuffle_coords()
         if block_iterations > 0 and (i + 1) % block_iterations == 0:
             model.update_progress()
-        if (i + 1) % freq == 0 and verbose:
+        if (((i + 1) % freq == 0) or (i == 0)) and verbose:
             with torch.no_grad():
-                out, hm = plot_image(model, vs_base, target_image)
+                out, hm = plot_image(model, vs_base, target_image, mask_model)
                 if hm is not None:
                     files_utils.export_image(hm, f'{out_path}heatmap_{tag}/{i:04d}.png')
                 files_utils.export_image(out, f'{out_path}opt_{tag}/{i:04d}.png')
         logger.reset_iter()
     logger.stop()
     files_utils.save_model(model, f'{out_path}model_{tag}.pth')
+
     if verbose:
         image_utils.gifed(f'{out_path}opt_{tag}/', .07, tag, reverse=False)
         if model.is_progressive:
@@ -123,36 +157,115 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
                                    filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
         files_utils.delete_all(f'{out_path}opt_{tag}/', '.png',
                                filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
-    return model, vs_base, vs_in, labels
+    return model
+
+class PSNR:
+    """Peak Signal to Noise Ratio
+    img1 and img2 have range [0, 255]"""
+
+    def __init__(self):
+        self.name = "PSNR"
+
+    @staticmethod
+    def __call__(img1, img2):
+        mse = torch.mean((img1 - img2) ** 2)
+        return 20 * torch.log10(1.0 / torch.sqrt(mse))
+
+def evaluate(model, vs_in, labels, mask = None):
+    model.eval()
+    with torch.no_grad():
+        out = model(vs_in, override_mask=mask)
+        psnr = PSNR()
+        return psnr(out, labels)
 
 
 def main() -> int:
+    KEEP_GROUP = True
+    PRETRAIN = False
+    LEARN_MASK = False
+    RETRAIN = False
+    CHECKPOINT_DIR = 'checkpoints/2d_images/'
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
     device = CUDA(0)
     print(device)
     image_path = files_utils.get_source_path()
     name = files_utils.split_path(image_path)[1]
     scale = .25
-    group = init_source_target(image_path, name, scale=scale, max_res=512, square=False, non_uniform_sampling=False)
+    if KEEP_GROUP:
+        group = torch.load(os.path.join(CHECKPOINT_DIR, 'group.pt'))
+    else:
+        group = init_source_target(image_path, name, scale=scale, max_res=512, square=False, non_uniform_sampling=False)
+        torch.save(group, os.path.join(CHECKPOINT_DIR, 'group.pt'))
+    vs_base, vs_in, labels, target_image, image_labels, masked_image = group
+
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                                hidden_dim=256, std=20., num_layers=3)
-    control_params = encoding_controler.ControlParams(num_iterations=1000, epsilon=1e-3, res=2)
+    control_params = encoding_controler.ControlParams(num_iterations=3000, epsilon=1e-3, res=2)
     encoding_type = EncodingType.FF
     controller_type = ControllerType.GlobalProgression
-    model, vs_base, vs_in, labels = optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
-                 50, verbose=True)
-    model_copy = copy.deepcopy(model)
+
+    if PRETRAIN:
+        model = optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
+                    50, verbose=True)
+        torch.save(model.state_dict(), os.path.join(CHECKPOINT_DIR, 'model.pt'))
+    else:
+        model = encoding_controler.get_controlled_model(model_params, encoding_type, control_params,controller_type).to(device)
+        model.load_state_dict(torch.load(os.path.join(CHECKPOINT_DIR, 'model.pt')))
+    
+    # model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
-                                               hidden_dim=256, std=5., num_layers=3)
+                                                hidden_dim=512, std=5., num_layers=3)
+    weight_tensor = torch.log(((model.model.encode.frequencies**2).sum(0)**0.5))
+    # weight_tensor = torch.ones_like(model_copy.model.encode.frequencies[0])
     control_params_2 = encoding_controler.ControlParams(num_iterations=1000, epsilon=1e-5)
-    mask_model = encoding_controler.get_controlled_model(mask_model_params, encoding_type, control_params_2, ControllerType.NoControl).to(device)
-    weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5
-    optMask = MaskOptimizer(mask_model, model, weight_tensor, lambda_cost=0.05)
-    mask = optMask.optimize_mask(vs_in, labels, 500).detach()
-    mask2 = torch.ones_like(mask)
+    if LEARN_MASK:
+        mask_model = encoding_controler.get_controlled_model(mask_model_params, encoding_type, control_params_2, ControllerType.NoControl).to(device)
+        optMask = MaskModel(mask_model, model, weight_tensor, lambda_cost=0.007, mask_lr=1e-4)
+        mask = optMask.fit(vs_in, labels, device, 4000, vs_base=vs_base).detach()
+        # mask2 = torch.ones_like(mask)
 
-    optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
-                 50, verbose=True, mask=mask2, model=model)
+        # save mask and model
+        torch.save(mask, os.path.join(CHECKPOINT_DIR, 'mask.pt'))
+        torch.save(mask_model.state_dict(), os.path.join(CHECKPOINT_DIR, 'mask_model.pt'))
+    else:
+        mask = torch.load(os.path.join(CHECKPOINT_DIR, 'mask.pt'))
+        mask_model = encoding_controler.get_controlled_model(mask_model_params, encoding_type, control_params_2, ControllerType.NoControl).to(device)
+        mask_model.load_state_dict(torch.load(os.path.join(CHECKPOINT_DIR, 'mask_model.pt')))
+        optMask = MaskModel(mask_model, model, weight_tensor, lambda_cost=0.16)
 
+        # mask = torch.ones_like(mask)
+        # mask[:256] = 1
+        # mask[30:60] = 0.5
+    # order = torch.rand(vs_in.shape[0]).argsort()
+    # vs_in, labels = vs_in[order], labels[order]
+    # out = model(vs_in.cuda(), override_mask=mask.cuda())
+    
+    # print(nnf.mse_loss(out, labels.cuda(), reduction='mean'))
+    if RETRAIN:
+        model2 = optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
+                    50, verbose=True, mask=mask, model=model, mask_model = optMask, lr=1e-4)
+        torch.save(model2.state_dict(), os.path.join(CHECKPOINT_DIR, 'model2.pt'))
+    else:
+        model2 = encoding_controler.get_controlled_model(model_params, encoding_type, control_params,controller_type).to(device)
+        model2.load_state_dict(torch.load(os.path.join(CHECKPOINT_DIR, 'model2.pt')))
+
+    image_labels = image_labels.cuda()
+
+    vs_in, vs_base, labels = vs_in.cuda(), vs_base.cuda(), labels.cuda()
+    _, mask_base = optMask(vs_base)
+    # out, _ = plot_image(model.cuda(), vs_base.cuda(), target_image, optMask)
+    # files_utils.export_image(out, os.path.join(CHECKPOINT_DIR, 'pred_mask_img.png'))
+    # plt.imshow(torch.abs(image_labels.reshape(512, 512, -1).cpu() - model(vs_base, mask=mask_base).reshape(512, 512, -1).detach().cpu()).mean(2))
+    # plt.show()
+
+    print(f'train psnr PRETRAIN {evaluate(model, vs_in, labels)}')
+    print(f'train psnr MASK {evaluate(model, vs_in, labels, mask)}')
+    print(f'train psnr RETRAIN {evaluate(model2, vs_in, labels, mask)}')
+    print()
+    print(f'test psnr PRETRAIN {evaluate(model, vs_base, image_labels)}')
+    print(f'test psnr MASK {evaluate(model, vs_base, image_labels, mask_base)}')
+    print(f'test psnr RETRAIN {evaluate(model2, vs_base, image_labels, mask_base)}')
     return 0
 
 if __name__ == '__main__':
