@@ -50,7 +50,7 @@ class EncodedController(nn.Module, abc.ABC):
         raise NotImplemented
 
     def forward(self, x: T, **kwargs):
-        return self.model(x)
+        return self.model(x, **kwargs)
 
     def __init__(self, params: encoding_models.ModelParams, encoding_type: EncodingType, control_params: ControlParams):
         super(EncodedController, self).__init__()
@@ -97,7 +97,7 @@ class ProgressiveEncoderController(EncodedController, abc.ABC):
         mask = torch.zeros(self.mask_stashed.shape[0], self.encoding_dim)
         arange = torch.arange(self.encoding_dim)
         arange = arange.unsqueeze(0).repeat(self.mask_stashed.shape[0], 1)
-        fill_a = arange.lt(torch.floor(self.mask_stashed[:, None]).cpu())
+        fill_a = arange.lt(torch .floor(self.mask_stashed[:, None]).cpu())
         fill_b = ~fill_a * arange.le(self.mask_stashed[:, None].cpu())
         mask[fill_a] = 1
         mask[fill_b] = (self.mask_stashed[self.mask_stashed.lt(self.encoding_dim)] % 1).cpu()

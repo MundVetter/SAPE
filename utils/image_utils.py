@@ -141,12 +141,13 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
         select = torch.rand(h * w).argsort()
         masked = select[split:]
         select = select[:split]
-
     sample_cords = coords[select]
-    labels = labels[select]
+    sample_labels = labels[select]
     masked_image[masked] = 1
+    masked_cords = coords[masked]
+    masked_labels = labels[masked]
     masked_image = masked_image.view(h, w, c)
-    return labels, sample_cords, coords, masked_image
+    return sample_labels, sample_cords, coords, masked_cords, masked_labels, masked_image
 
 
 def grid_sampling(image: ARRAY, scale: int):
@@ -176,6 +177,6 @@ def init_source_target(path: Union[ARRAY, str], name: str, max_res: int, scale: 
     if cache is None:
         cache = random_sampling(image, scale, non_uniform_sampling=non_uniform_sampling)
         files_utils.save_pickle(cache, cache_path)
-    labels, samples, vs_base, masked_image = cache
+    labels, samples, vs_base, masked_cords, mask_labels, masked_image = cache
     image_labels = torch.from_numpy(image).reshape(-1, c).float() / 255
-    return vs_base, samples, labels, image, image_labels, masked_image
+    return vs_base, samples, labels, image, image_labels, (masked_cords, mask_labels, masked_image)
