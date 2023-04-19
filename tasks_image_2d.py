@@ -13,9 +13,6 @@ def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image:
         if model.is_progressive or mask_model is not None:
             if mask_model is not None:
                 _, mask = mask_model(vs_in)
-                # mask = torch.zeros_like(mask)
-                # mask[:, :512] = 1
-                # mask
                 out = model(vs_in, override_mask=mask)
             else:
                 out, mask = model(vs_in, get_mask=True)
@@ -70,10 +67,10 @@ class MaskModel(nn.Module):
                         def __init__(self):
                             self.shape = [512, 512, 3]
                     shape_obj = shape()
-                    out, hm = plot_image(self.frozen_model, vs_base.cuda(), shape_obj, self)
+                    out, hm = plot_image(self.frozen_model, vs_base.to(device), shape_obj, self)
                     name = 'chibi'
                     tag = 'chibi_ff_no_control'
-                    out_path = f'{constants.CHECKPOINTS_ROOT}/2d_images/{name}/'
+                    out_path = f'{constants.constants.CHECKPOINTS_ROOT}/2d_images/{name}/'
                     files_utils.export_image(out, f'{out_path}opt_{tag}/{i:04d}.png')
                     if hm is not None:
                         files_utils.export_image(hm, f'{out_path}heatmap_{tag}/{i:04d}.png')
@@ -99,12 +96,6 @@ class MaskModel(nn.Module):
 def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controler.ControlParams, group, device: D,
              freq: int, verbose=False, mask=None, model=None, mask_model = None, lr=1e-3):
-
-    def shuffle_coords():
-        nonlocal vs_in, labels
-        order = torch.rand(vs_in.shape[0]).argsort()
-        vs_in, labels = vs_in[order], labels[order]
-
     name = files_utils.split_path(image_path)[1]
     vs_base, vs_in, labels, target_image, image_labels, masked_image = group
     tag = f'{name}_{encoding_type.value}_{controller_type.value}'
@@ -117,8 +108,6 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
     opt = Optimizer(model.parameters(), lr=lr)
     logger = train_utils.Logger().start(control_params.num_iterations, tag=tag)
     files_utils.export_image(target_image, f'{out_path}target.png')
-    # if masked_image is not None:
-    #     files_utils.export_image(masked_image, f'{out_path}target_masked.png')
     for i in range(control_params.num_iterations):
         opt.zero_grad()
         if mask is None:
@@ -133,7 +122,6 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
         opt.step()
         model.stash_iteration(loss_all.mean(-1))
         logger.stash_iter('mse_train', loss)
-        # shuffle_coords()
         if block_iterations > 0 and (i + 1) % block_iterations == 0:
             model.update_progress()
         if (((i + 1) % freq == 0) or (i == 0)) and verbose:
@@ -176,25 +164,22 @@ def evaluate(model, vs_in, labels, mask = None):
         return psnr(out, labels)
 
 
-def main() -> int:
-    KEEP_GROUP = True
-    PRETRAIN = False
-    LEARN_MASK = False
-    RETRAIN = False
-    CHECKPOINT_DIR = 'checkpoints/2d_images/'
-    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-
+def main(KEEP_GROUP = False,
+         PRETRAIN = True,
+         LEARN_MASK = True,
+         RETRAIN = True,
+         IMAGE_PATH = "assets/images/chibi.jpg") -> int:
     device = CUDA(0)
+    os.makedirs(constants.CHECKPOINTS_ROOT, exist_ok=True)
     print(device)
-    image_path = files_utils.get_source_path()
-    name = files_utils.split_path(image_path)[1]
+    name = files_utils.split_path(IMAGE_PATH)[1]
     scale = .25
 
     if KEEP_GROUP:
-        group = torch.load(os.path.join(CHECKPOINT_DIR, 'group.pt'))
+        group = torch.load(os.path.join(constants.CHECKPOINTS_ROOT, 'group.pt'))
     else:
-        group = init_source_target(image_path, name, scale=scale, max_res=512, square=False, non_uniform_sampling=False)
-        torch.save(group, os.path.join(CHECKPOINT_DIR, 'group.pt'))
+        group = init_source_target(IMAGE_PATH, name, scale=scale, max_res=512, square=False, non_uniform_sampling=False)
+        torch.save(group, os.path.join(constants.CHECKPOINTS_ROOT, 'group.pt'))
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image) = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
@@ -204,12 +189,12 @@ def main() -> int:
     controller_type = ControllerType.GlobalProgression
 
     if PRETRAIN:
-        model = optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
+        model = optimize(IMAGE_PATH, encoding_type, model_params, controller_type, control_params, group, device,
                     50, verbose=True)
-        torch.save(model.state_dict(), os.path.join(CHECKPOINT_DIR, 'model.pt'))
+        torch.save(model.state_dict(), os.path.join(constants.CHECKPOINTS_ROOT, 'model.pt'))
     else:
         model = encoding_controler.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
-        model.load_state_dict(torch.load(os.path.join(CHECKPOINT_DIR, 'model.pt')))
+        model.load_state_dict(torch.load(os.path.join(constants.CHECKPOINTS_ROOT, 'model.pt')))
 
     # model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
@@ -222,29 +207,29 @@ def main() -> int:
         optMask = MaskModel(mask_model, model, weight_tensor, lambda_cost=0.003, mask_lr=1e-4)
         mask = optMask.fit(vs_in, labels, device, 3000, vs_base=vs_base).detach()
 
-        torch.save(mask, os.path.join(CHECKPOINT_DIR, 'mask.pt'))
-        torch.save(mask_model.state_dict(), os.path.join(CHECKPOINT_DIR, 'mask_model.pt'))
+        torch.save(mask, os.path.join(constants.CHECKPOINTS_ROOT, 'mask.pt'))
+        torch.save(mask_model.state_dict(), os.path.join(constants.CHECKPOINTS_ROOT, 'mask_model.pt'))
     else:
-        mask = torch.load(os.path.join(CHECKPOINT_DIR, 'mask.pt'))
+        mask = torch.load(os.path.join(constants.CHECKPOINTS_ROOT, 'mask.pt'))
         mask_model = encoding_controler.get_controlled_model(mask_model_params, encoding_type, control_params_2, ControllerType.NoControl).to(device)
-        mask_model.load_state_dict(torch.load(os.path.join(CHECKPOINT_DIR, 'mask_model.pt')))
+        mask_model.load_state_dict(torch.load(os.path.join(constants.CHECKPOINTS_ROOT, 'mask_model.pt')))
         optMask = MaskModel(mask_model, model, weight_tensor, lambda_cost=0.16)
 
     if RETRAIN:
-        model2 = optimize(image_path, encoding_type, model_params, controller_type, control_params, group, device,
+        model2 = optimize(IMAGE_PATH, encoding_type, model_params, controller_type, control_params, group, device,
                     50, verbose=True, mask=mask, model=model, mask_model = optMask, lr=1e-4)
-        torch.save(model2.state_dict(), os.path.join(CHECKPOINT_DIR, 'model2.pt'))
+        torch.save(model2.state_dict(), os.path.join(constants.CHECKPOINTS_ROOT, 'model2.pt'))
     else:
         model2 = encoding_controler.get_controlled_model(model_params, encoding_type, control_params,controller_type).to(device)
-        model2.load_state_dict(torch.load(os.path.join(CHECKPOINT_DIR, 'model2.pt')))
+        model2.load_state_dict(torch.load(os.path.join(constants.CHECKPOINTS_ROOT, 'model2.pt')))
 
     ### Evaluation
-    image_labels = image_labels.cuda()
-    vs_in, labels = vs_in.cuda(),labels.cuda()
+    image_labels = image_labels.to(device)
+    vs_in, labels = vs_in.to(device),labels.to(device)
     
-    vs_base = vs_base.cuda()
-    # masked_cords = masked_cords.cuda()
-    # masked_labels = masked_labels.cuda()
+    vs_base = vs_base.to(device)
+    # masked_cords = masked_cords.to(device)
+    # masked_labels = masked_labels.to(device)
 
     _, mask_base = optMask(vs_base)
     # _, masked_mask = optMask(masked_cords)
@@ -260,8 +245,6 @@ def main() -> int:
     # print('test masked psnr PRETRAIN', evaluate(model, masked_cords, masked_labels))
     # print('test masked psnr MASK', evaluate(model, masked_cords, masked_labels, masked_mask))
     # print('test masked psnr RETRAIN', evaluate(model2, masked_cords, masked_labels, masked_mask))
-
-
 
     return 0
 
