@@ -144,23 +144,14 @@ def optimize(image_path: Union[ARRAY, str], encoding_type: EncodingType, model_p
                                filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
     return model
 
-class PSNR:
-    """Peak Signal to Noise Ratio
-    img1 and img2 have range [0, 255]"""
-
-    def __init__(self):
-        self.name = "PSNR"
-
-    @staticmethod
-    def __call__(img1, img2):
-        mse = torch.mean((img1 - img2) ** 2)
-        return 20 * torch.log10(1.0 / torch.sqrt(mse))
+def psnr(img1, img2):
+    mse = torch.mean((img1 - img2) ** 2)
+    return 20 * torch.log10(1.0 / torch.sqrt(mse))
 
 def evaluate(model, vs_in, labels, mask = None):
     model.eval()
     with torch.no_grad():
         out = model(vs_in, override_mask=mask)
-        psnr = PSNR()
         return psnr(out, labels)
 
 
