@@ -6,7 +6,9 @@ from custom_types import *
 from custom_types import T, ARRAY
 from utils import files_utils
 import imageio
-
+import os
+import pathlib
+import pickle
 
 def is_grayscale(image: ARRAY) -> bool:
     if image.ndim == 2 or image.shape[-1] == 1:
@@ -161,8 +163,8 @@ def grid_sampling(image: ARRAY, scale: int):
 
 def init_source_target(path: Union[ARRAY, str], name: str, max_res: int, scale: Union[float, int],
                        square: bool = True, non_uniform_sampling=False):
-    if type(path) is str:
-        image = files_utils.load_image(path)
+    if isinstance(path, pathlib.PurePath):
+        image = np.array(Image.open(path).convert('RGB'))
     else:
         image = path
     if is_grayscale(image):
@@ -171,10 +173,11 @@ def init_source_target(path: Union[ARRAY, str], name: str, max_res: int, scale: 
         image = crop_square(image)
     image = resize(image, max_res)
     h, w, c = image.shape
-    cache_path = f'{constants.RAW_IMAGES}cache/{name}_{scale}.pkl'
-    cache = files_utils.load_pickle(cache_path)
-    cache = None
-    if cache is None:
+    cache_path = constants.RAW_IMAGES / 'cache' / f'{name}_{scale}_{non_uniform_sampling}.pkl'
+
+    if cache_path.exists():
+        cache = files_utils.load_pickle(cache_path)
+    else:
         cache = random_sampling(image, scale, non_uniform_sampling=non_uniform_sampling)
         files_utils.save_pickle(cache, cache_path)
     labels, samples, vs_base, masked_cords, mask_labels, masked_image = cache

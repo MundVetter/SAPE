@@ -66,8 +66,8 @@ def is_file(path: str):
 
 
 def add_suffix(path: str, suffix: str) -> str:
-    if len(path) < len(suffix) or path[-len(suffix):] != suffix:
-        path = f'{path}{suffix}'
+    if len(str(path)) < len(suffix) or path[-len(str(suffix)):] != suffix:
+        path = path / suffix
     return path
 
 
@@ -94,7 +94,6 @@ def save_np(arr_or_dict: Union[V, dict], path: str):
 
 
 def load_pickle(path: str):
-    path = add_suffix(path, '.pkl')
     data = None
     if os.path.isfile(path):
         try:
@@ -109,7 +108,6 @@ def load_pickle(path: str):
 def save_pickle(obj, path: str):
     if const.DEBUG:
         return
-    path = add_suffix(path, '.pkl')
     init_folders(path)
     with open(path, 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
