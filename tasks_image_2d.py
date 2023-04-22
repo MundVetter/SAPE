@@ -67,7 +67,7 @@ class MaskModel(nn.Module):
             logger.stash_iter('mse_train', mse_loss)
 
             if i % 100 == 0 and vs_base is not None:
-                export_images(self.frozen_model, image, out_path, tag, vs_base, self.device, self,  i)
+                export_images(self.frozen_model, image, out_path, tag, vs_base, self.device, self, i)
 
             total_loss.backward()
             self.optimizer.step()
@@ -79,6 +79,14 @@ class MaskModel(nn.Module):
             param.requires_grad = True
         return mask
 
+    def forward(self, vs_in):
+        mask_original = torch.sigmoid(self.mask_model(vs_in))
+        mask = torch.stack([mask_original, mask_original],
+                           dim=2).view(-1, self.encoding_dim - 2)
+        ones = torch.ones_like(vs_in, device=vs_in.device)
+        mask = torch.cat([ones, mask], dim=-1)
+        return mask_original, mask
+    
 def export_images(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0):
     with torch.no_grad():
         extra = 'mask' if mask_model is not None else 'no_mask'
@@ -90,16 +98,8 @@ def export_images(model, image, out_path, tag, vs_base, device, mask_model=None,
             files_utils.export_image(
                         hm, out_path / f'heatmap_{tag}_{extra}' / f'{i:04d}.png')
 
-    def forward(self, vs_in):
-        mask_original = torch.sigmoid(self.mask_model(vs_in))
-        mask = torch.stack([mask_original, mask_original],
-                           dim=2).view(-1, self.encoding_dim - 2)
-        ones = torch.ones_like(vs_in, device=vs_in.device)
-        mask = torch.cat([ones, mask], dim=-1)
-        return mask_original, mask
 
-
-def optimize(image_path, encoding_type: EncodingType, model_params,
+def optimize(encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controler.ControlParams, group, tag, out_path, device: D,
              freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3):
     vs_base, vs_in, labels, target_image, image_labels, _ = group
@@ -129,7 +129,7 @@ def optimize(image_path, encoding_type: EncodingType, model_params,
         if block_iterations > 0 and (i + 1) % block_iterations == 0:
             model.update_progress()
         if (((i + 1) % freq == 0) or (i == 0)) and verbose:
-            export_images(model, mask_model, target_image, out_path, tag, vs_base, device, i = 0)
+            export_images(model, target_image, out_path, tag, vs_base, device, i = i, mask_model=mask_model)
         logger.reset_iter()
     logger.stop()
 
@@ -156,10 +156,10 @@ def evaluate(model, vs_in, labels, mask=None):
         return psnr(out, labels)
 
 
-def main(PRETRAIN=False,
+def main(PRETRAIN=True,
          LEARN_MASK=True,
          RETRAIN=True,
-         IMAGE_PATH="images/snow.jpg",
+         IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression) -> int:
     device = CUDA(0)
@@ -176,8 +176,7 @@ def main(PRETRAIN=False,
     #     torch.save(group, os.path.join(constants.CHECKPOINTS_ROOT, 'group.pt'))
     group = init_source_target(image_path, name, scale=scale,
                                max_res=512, square=False, non_uniform_sampling=False)
-    vs_base, vs_in, labels, target_image, image_labels, (
-        masked_cords, masked_labels, masked_image) = group
+    vs_base, vs_in, labels, target_image, image_labels, _ = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                                hidden_dim=256, std=20., num_layers=3)
@@ -189,7 +188,7 @@ def main(PRETRAIN=False,
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
 
     if PRETRAIN:
-        model = optimize(image_path, ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
+        model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                          50, verbose=True)
         torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
     else:
@@ -224,7 +223,12 @@ def main(PRETRAIN=False,
         optMask = MaskModel(mask_model, model, weight_tensor, lambda_cost=0.16)
 
     if RETRAIN:
-        model2 = optimize(image_path, ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
+        # only retrain last layer
+        for param in model.parameters():
+            param.requires_grad = False
+        for param in model.model.model.model[-3:].parameters():
+            param.requires_grad = True
+        model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                           50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4)
         torch.save(model2.state_dict(), out_path / f'model2_{tag}.pt')
     else:
