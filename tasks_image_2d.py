@@ -7,7 +7,7 @@ import copy
 import matplotlib.pyplot as plt
 import os
 from pathlib import Path
-
+import math
 
 def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, mask_model):
     model.eval()
@@ -143,22 +143,55 @@ def optimize(encoding_type: EncodingType, model_params,
     #  filter_out=lambda x: f'{control_params.#num_iterations - 1}' == x[1])
     return model
 
-
 def psnr(img1, img2):
     mse = torch.mean((img1 - img2) ** 2)
     return 20 * torch.log10(1.0 / torch.sqrt(mse))
+
+def rgb_to_grayscale(img):
+    # The weights correspond to the conversion formula: 
+    # Y = 0.2989 * R + 0.5870 * G + 0.1140 * B
+    weights = torch.tensor([0.2989, 0.5870, 0.1140]).view(1, -1, 1, 1).to(img.device)
+    return (img * weights).sum(dim=1, keepdim=True)
+
+def ssim(img1, img2, window_size=5, k1=0.01, k2=0.03, L=1.0):
+    C1 = (k1 * L) ** 2
+    C2 = (k2 * L) ** 2
+    window = torch.ones((1, 1, window_size, window_size)) / (window_size ** 2)
+    
+    img1 = img1.view(1, img1.shape[1], int(math.sqrt(img1.shape[0])), -1)
+    img2 = img2.view(1, img2.shape[1], int(math.sqrt(img2.shape[0])), -1)
+
+    img1_gray = rgb_to_grayscale(img1)
+    img2_gray = rgb_to_grayscale(img2)
+
+    window = window.to(img1_gray.device)
+
+    mu1 = nnf.conv2d(img1_gray, window, padding=window_size // 2, groups=1)
+    mu2 = nnf.conv2d(img2_gray, window, padding=window_size // 2, groups=1)
+
+    mu1_sq = mu1.pow(2)
+    mu2_sq = mu2.pow(2)
+    mu1_mu2 = mu1 * mu2
+
+    sigma1_sq = nnf.conv2d(img1_gray * img1_gray, window, padding=window_size // 2, groups=1) - mu1_sq
+    sigma2_sq = nnf.conv2d(img2_gray * img2_gray, window, padding=window_size // 2, groups=1) - mu2_sq
+    sigma12 = nnf.conv2d(img1_gray * img2_gray, window, padding=window_size // 2, groups=1) - mu1_mu2
+
+    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+
+    return torch.mean(ssim_map)
 
 
 def evaluate(model, vs_in, labels, mask=None):
     model.eval()
     with torch.no_grad():
         out = model(vs_in, override_mask=mask)
-        return psnr(out, labels)
+        return psnr(out, labels), ssim(out, labels)
 
 
-def main(PRETRAIN=True,
-         LEARN_MASK=True,
-         RETRAIN=True,
+def main(PRETRAIN=False,
+         LEARN_MASK=False,
+         RETRAIN=False,
          IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression) -> int:
@@ -168,12 +201,6 @@ def main(PRETRAIN=True,
     print(device)
     name = files_utils.split_path(IMAGE_PATH)[1]
     scale = .25
-
-    # if KEEP_GROUP:
-    #     group = torch.load(os.path.join(constants.CHECKPOINTS_ROOT, 'group.pt'))
-    # else:
-    #     group = init_source_target(IMAGE_PATH, name, scale=scale, max_res=512, square=False, non_uniform_sampling=False)
-    #     torch.save(group, os.path.join(constants.CHECKPOINTS_ROOT, 'group.pt'))
     group = init_source_target(image_path, name, scale=scale,
                                max_res=512, square=False, non_uniform_sampling=False)
     vs_base, vs_in, labels, target_image, image_labels, _ = group
@@ -198,7 +225,7 @@ def main(PRETRAIN=True,
 
     # model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
-                                                    hidden_dim=512, std=5., num_layers=3)
+                                                    hidden_dim=256, std=5., num_layers=2)
     weight_tensor = torch.log(
         ((model.model.encode.frequencies**2).sum(0)**0.5))
     control_params_2 = encoding_controler.ControlParams(
@@ -255,7 +282,7 @@ def main(PRETRAIN=True,
     print(
         f'test psnr MASK {evaluate(model, vs_base, image_labels, mask_base)}')
     print(
-        f'test psnr RETRAIN {evaluate(model2, vs_base, image_labels, mask_base)}')
+        f'test (psnr, ssim) RETRAIN {evaluate(model2, vs_base, image_labels, mask_base)}')
     # print()
     # print('test masked psnr PRETRAIN', evaluate(model, masked_cords, masked_labels))
     # print('test masked psnr MASK', evaluate(model, masked_cords, masked_labels, masked_mask))
