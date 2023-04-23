@@ -153,13 +153,13 @@ def rgb_to_grayscale(img):
     weights = torch.tensor([0.2989, 0.5870, 0.1140]).view(1, -1, 1, 1).to(img.device)
     return (img * weights).sum(dim=1, keepdim=True)
 
-def ssim(img1, img2, window_size=5, k1=0.01, k2=0.03, L=1.0):
+def ssim(img1, img2, img_shape, window_size=11, k1=0.01, k2=0.03, L=1.0):
     C1 = (k1 * L) ** 2
     C2 = (k2 * L) ** 2
     window = torch.ones((1, 1, window_size, window_size)) / (window_size ** 2)
     
-    img1 = img1.view(1, img1.shape[1], int(math.sqrt(img1.shape[0])), -1)
-    img2 = img2.view(1, img2.shape[1], int(math.sqrt(img2.shape[0])), -1)
+    img1 = img1.view(1, img1.shape[1], img_shape[0], -1)
+    img2 = img2.view(1, img2.shape[1], img_shape[0], -1)
 
     img1_gray = rgb_to_grayscale(img1)
     img2_gray = rgb_to_grayscale(img2)
@@ -182,17 +182,17 @@ def ssim(img1, img2, window_size=5, k1=0.01, k2=0.03, L=1.0):
     return torch.mean(ssim_map)
 
 
-def evaluate(model, vs_in, labels, mask=None):
+def evaluate(model, vs_in, labels, img_shape, mask=None):
     model.eval()
     with torch.no_grad():
         out = model(vs_in, override_mask=mask)
-        return psnr(out, labels), ssim(out, labels)
+        return psnr(out, labels), ssim(out, labels, img_shape)
 
 
 def main(PRETRAIN=False,
          LEARN_MASK=False,
          RETRAIN=False,
-         IMAGE_PATH="images/chibi.jpg",
+         IMAGE_PATH="images/snow.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression) -> int:
     device = CUDA(0)
@@ -225,7 +225,7 @@ def main(PRETRAIN=False,
 
     # model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
-                                                    hidden_dim=256, std=5., num_layers=2)
+                                                    hidden_dim=512, std=5., num_layers=3)
     weight_tensor = torch.log(
         ((model.model.encode.frequencies**2).sum(0)**0.5))
     control_params_2 = encoding_controler.ControlParams(
@@ -272,17 +272,18 @@ def main(PRETRAIN=False,
     # masked_labels = masked_labels.to(device)
 
     _, mask_base = optMask(vs_base)
+    img_shape = target_image.shape
     # _, masked_mask = optMask(masked_cords)
 
-    print(f'train psnr PRETRAIN {evaluate(model, vs_in, labels)}')
-    print(f'train psnr MASK {evaluate(model, vs_in, labels, mask)}')
-    print(f'train psnr RETRAIN {evaluate(model2, vs_in, labels, mask)}')
+    print(f'train psnr PRETRAIN {evaluate(model, vs_in, labels, img_shape)}')
+    print(f'train psnr MASK {evaluate(model, vs_in, labels, img_shape, mask)}')
+    print(f'train psnr RETRAIN {evaluate(model2, vs_in, labels, img_shape, mask)}')
     print()
-    print(f'test psnr PRETRAIN {evaluate(model, vs_base, image_labels)}')
+    print(f'test psnr PRETRAIN {evaluate(model, vs_base, image_labels, img_shape)}')
     print(
-        f'test psnr MASK {evaluate(model, vs_base, image_labels, mask_base)}')
+        f'test psnr MASK {evaluate(model, vs_base, image_labels, img_shape, mask_base)}')
     print(
-        f'test (psnr, ssim) RETRAIN {evaluate(model2, vs_base, image_labels, mask_base)}')
+        f'test (psnr, ssim) RETRAIN {evaluate(model2, vs_base, image_labels, img_shape, mask_base)}')
     # print()
     # print('test masked psnr PRETRAIN', evaluate(model, masked_cords, masked_labels))
     # print('test masked psnr MASK', evaluate(model, masked_cords, masked_labels, masked_mask))
