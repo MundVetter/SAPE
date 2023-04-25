@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import os
 from pathlib import Path
 import math
+import csv
 
 
 
@@ -93,18 +94,14 @@ class MaskModel(nn.Module):
         return mask
 
     def forward(self, vs_in):
-        n = 2
         mask_original = torch.sigmoid(self.mask_model(vs_in))
-        mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
-        # mask = torch.repeat_interleave(mask_original.unsqueeze(2), n, dim=2).view(-1, self.encoding_dim - 2)
-        # Add an extra dimension to mask_original at dim=2
-        # mask_expanded = mask_original.unsqueeze(2)
-        # mask = torch.repeat_interleave(mask_original.unsqueeze(2), n, dim=2).view(-1, self.encoding_dim - 2)
-
-# Concatenate the expanded mask_original n times along the new dimension (dim=2)
-        # mask = torch.cat([mask_expanded] * n, dim=2).view(-1, self.encoding_dim - 2)
-        ones = torch.ones_like(vs_in, device=vs_in.device)
-        mask = torch.cat([ones, mask], dim=-1)
+        # check if model is progressive
+        if self.frozen_model.is_progressive:
+            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
+            ones = torch.ones_like(vs_in, device=vs_in.device)
+            mask = torch.cat([ones, mask], dim=-1)
+        else:
+            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim)
         return mask_original, mask
     
 def export_images(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0):
@@ -244,21 +241,28 @@ def pretty_print_results(results, name, funcs):
                 print(f"{key} [{func.__name__}]: {value[i]}")
     print("=====================================")
 
-def save_results(results, name, funcs, out_path):
-    if type(funcs) is not list:
-        for key, value in results.items():
-            out_path.write_text(f"{key} [{funcs.__name__}]: {value}")
-    else:
-        for key, value in results.items():
-            for i, func in enumerate(funcs):
-                out_path.write_text(f"{key} [{func.__name__}]: {value[i]}")
 
-def main(PRETRAIN=False,
-         LEARN_MASK=False,
-         RETRAIN=False,
+def save_results_to_csv(results, name, funcs, path):
+    file_name = path / f"{name}_results.csv"
+    
+    with open(file_name, mode='w', newline='') as csv_file:
+        fieldnames = ['configuration', 'function', 'value']
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+
+        writer.writeheader()
+        for key, value in results.items():
+            if type(funcs) is not list:
+                writer.writerow({'configuration': key, 'function': funcs.__name__, 'value': float(value)})
+            else:
+                for i, func in enumerate(funcs):
+                    writer.writerow({'configuration': key, 'function': func.__name__, 'value': float(value[i])})
+
+def main(PRETRAIN=True,
+         LEARN_MASK=True,
+         RETRAIN=True,
          NON_UNIFORM=False,
-         IMAGE_PATH="images/chibi.jpg",
-         IMAGE=None,
+         EPOCH=1,
+         IMAGE_PATH="natural_images/image_000.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression) -> int:
     device = CUDA(0)
@@ -266,19 +270,20 @@ def main(PRETRAIN=False,
     os.makedirs(constants.CHECKPOINTS_ROOT, exist_ok=True)
     print(device)
     name = files_utils.split_path(IMAGE_PATH)[1]
+
     scale = .25
-    image_or_path = IMAGE_PATH if IMAGE is None else IMAGE
-    group = init_source_target(image_or_path, name, scale=scale,
+    group = init_source_target(image_path, name, scale=scale,
                                max_res=512, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                                hidden_dim=256, std=20., num_layers=3)
     control_params = encoding_controler.ControlParams(
-        num_iterations=3000, epsilon=1e-3, res=128)
+        num_iterations=EPOCH, epsilon=1e-3, res=128)
 
     tag = f'{name}_{ENCODING_TYPE.value}_{CONTROLLER_TYPE.value}'
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
+    os.makedirs(out_path, exist_ok=True)
 
     if PRETRAIN:
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
@@ -302,7 +307,7 @@ def main(PRETRAIN=False,
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
                             lambda_cost=0.001, mask_lr=1e-3)
-        mask = optMask.fit(vs_in, labels, target_image, out_path, tag, 3000,
+        mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCH,
                            vs_base=vs_base).detach()
 
         torch.save(mask, out_path / 'mask.pt')
@@ -337,6 +342,10 @@ def main(PRETRAIN=False,
     pretty_print_results(res_train, "train", psnr)
     pretty_print_results(res_test, "test", [psnr, ssim])
     pretty_print_results(res_masked, "test_masked", psnr)
+
+    save_results_to_csv(res_train, "train", psnr, out_path)
+    save_results_to_csv(res_test, "test", [psnr, ssim], out_path)
+    save_results_to_csv(res_masked, "test_masked", psnr, out_path)
 
     return 0
 
