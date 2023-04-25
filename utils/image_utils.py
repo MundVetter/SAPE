@@ -117,7 +117,6 @@ def unroll_domain(h: int, w: int) -> T:
     vs = torch.stack(vs, dim=2)
     return vs
 
-
 def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling=False):
     h, w, c = image.shape
     coords = unroll_domain(h, w).view(-1, 2)
@@ -135,21 +134,29 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
         weight_map = edge_map / edge_map.sum()
 
         select = np.random.choice(a=h * w, size=split, replace=False, p=weight_map.reshape(-1))
-        select = torch.from_numpy(select)
+        select = torch.from_numpy(select).long()
         masked = torch.ones(h*w)
         masked[select] = 0
         masked = torch.nonzero(masked).squeeze(-1)
+
+        # Calculate probability for non-uniform sampling
+        prob = torch.from_numpy(weight_map.reshape(-1)[select])
     else:
         select = torch.rand(h * w).argsort()
         masked = select[split:]
         select = select[:split]
+
+        # Calculate probability for uniform sampling
+        prob = torch.from_numpy(np.full(split, 1 / (h * w)))
+
     sample_cords = coords[select]
     sample_labels = labels[select]
     masked_image[masked] = 1
     masked_cords = coords[masked]
     masked_labels = labels[masked]
     masked_image = masked_image.view(h, w, c)
-    return sample_labels, sample_cords, coords, masked_cords, masked_labels, masked_image
+    return sample_labels, sample_cords, coords, masked_cords, masked_labels, masked_image, prob
+
 
 
 def grid_sampling(image: ARRAY, scale: int):
@@ -180,6 +187,6 @@ def init_source_target(path: Union[ARRAY, str], name: str, max_res: int, scale: 
     else:
         cache = random_sampling(image, scale, non_uniform_sampling=non_uniform_sampling)
         files_utils.save_pickle(cache, cache_path)
-    labels, samples, vs_base, masked_cords, mask_labels, masked_image = cache
+    labels, samples, vs_base, masked_cords, mask_labels, masked_image, prob = cache
     image_labels = torch.from_numpy(image).reshape(-1, c).float() / 255
-    return vs_base, samples, labels, image, image_labels, (masked_cords, mask_labels, masked_image)
+    return vs_base, samples, labels, image, image_labels, (masked_cords, mask_labels, masked_image), prob
