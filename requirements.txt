@@ -4,3 +4,4 @@ torch
 scipy
 Pillow
 imageio
+numpy-stl
