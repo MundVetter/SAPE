@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument("--partition", type=str, default="gpu")
     parser.add_argument("--n_runs", type=int, default=1)
     parser.add_argument("--array_parallelism", type=int, default=3)
-    # parser.add_argument("--controller_type", type=str, default="global_progression")
+    parser.add_argument("--controller_type", type=str, default="GlobalProgression")
     parser.add_argument("--n_epochs", type=int, default=1)
     return parser.parse_args()
 
@@ -30,6 +30,8 @@ if __name__ == "__main__":
     args = parse_args()
     file_names = get_image_filenames(constants.DATA_ROOT / "natural_images")
     executor = submitit.AutoExecutor(folder="logs")
+
+    controller_type = ControllerType.__members__[args.controller_type]
 
     executor.update_parameters(
         timeout_min=20,
@@ -44,4 +46,4 @@ if __name__ == "__main__":
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-                executor.submit(main, IMAGE_PATH = str(Path("natural_images") / file_name), CONTROLLER_TYPE = ControllerType.GlobalProgression, EPOCHS = args.n_epochs)
+                executor.submit(main, IMAGE_PATH = str(Path("natural_images") / file_name), CONTROLLER_TYPE = controller_type, EPOCHS = args.n_epochs)
