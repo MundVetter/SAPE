@@ -4,7 +4,7 @@ import constants
 import argparse
 import os
 from pathlib import Path
-# from custom_types import *
+from custom_types import *
 
 def get_image_filenames(folder_path):
     # List all files in the folder
@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument("--partition", type=str, default="gpu")
     parser.add_argument("--n_runs", type=int, default=1)
     parser.add_argument("--array_parallelism", type=int, default=3)
-    parser.add_argument("--controller_type", type=str, default="global_progression")
+    # parser.add_argument("--controller_type", type=str, default="global_progression")
     parser.add_argument("--n_epochs", type=int, default=1)
     return parser.parse_args()
 
@@ -44,5 +44,4 @@ if __name__ == "__main__":
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-
-                executor.submit(main, IMAGE_PATH = str(Path("natural_images") / file_name), CONTROLLER_TYPE = args.controller_type, EPOCHS = args.n_epochs)
+                executor.submit(main, IMAGE_PATH = str(Path("natural_images") / file_name), CONTROLLER_TYPE = ControllerType.GlobalProgression, EPOCHS = args.n_epochs)
