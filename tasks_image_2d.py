@@ -261,7 +261,7 @@ def main(PRETRAIN=True,
          LEARN_MASK=True,
          RETRAIN=True,
          NON_UNIFORM=False,
-         EPOCH=1,
+         EPOCHS=1,
          IMAGE_PATH="natural_images/image_000.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression) -> int:
@@ -279,7 +279,7 @@ def main(PRETRAIN=True,
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                                hidden_dim=256, std=20., num_layers=3)
     control_params = encoding_controler.ControlParams(
-        num_iterations=EPOCH, epsilon=1e-3, res=128)
+        num_iterations=EPOCHS, epsilon=1e-3, res=128)
 
     tag = f'{name}_{ENCODING_TYPE.value}_{CONTROLLER_TYPE.value}'
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
@@ -307,7 +307,7 @@ def main(PRETRAIN=True,
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
                             lambda_cost=0.001, mask_lr=1e-3)
-        mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCH,
+        mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base).detach()
 
         torch.save(mask, out_path / 'mask.pt')
