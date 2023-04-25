@@ -44,10 +44,5 @@ if __name__ == "__main__":
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-                main_args = {
-                    "IMAGE_PATH": str(Path("natural_images") / file_name),
-                    "CONTROLLER_TYPE": args.controller_type,
-                    "EPOCHS": args.n_epochs
-                }
-                file_path = Path("natural_images") / file_name
-                executor.submit(main, main_args)
+
+                executor.submit(main, IMAGE_PATH = str(Path("natural_images") / file_name), CONTROLLER_TYPE = args.controller_type, EPOCHS = args.n_epochs)
