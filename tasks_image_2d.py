@@ -257,8 +257,8 @@ def save_results_to_csv(results, name, funcs, path, tag):
                 for i, func in enumerate(funcs):
                     writer.writerow({'configuration': key, 'function': func.__name__, 'value': float(value[i])})
 
-def main(PRETRAIN=True,
-         LEARN_MASK=True,
+def main(PRETRAIN=False,
+         LEARN_MASK=False,
          RETRAIN=True,
          NON_UNIFORM=False,
          EPOCHS=1,
@@ -306,7 +306,7 @@ def main(PRETRAIN=True,
         mask_model = encoding_controler.get_controlled_model(
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
-                            lambda_cost=0.0007, mask_lr=1e-3)
+                            lambda_cost=0.001, mask_lr=1e-3)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base).detach()
 
@@ -322,10 +322,10 @@ def main(PRETRAIN=True,
 
     if RETRAIN:
         # only retrain last layer
-        for param in model.parameters():
-            param.requires_grad = False
-        for param in model.model.model.model[-3:].parameters():
-            param.requires_grad = True
+        # for param in model.parameters():
+        #     param.requires_grad = False
+        # for param in model.model.model.model[-3:].parameters():
+        #     param.requires_grad = True
         model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                           50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4)
         torch.save(model2.state_dict(), out_path / f'model2_{tag}.pt')
