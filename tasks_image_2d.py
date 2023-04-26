@@ -257,9 +257,9 @@ def save_results_to_csv(results, name, funcs, path, tag):
                 for i, func in enumerate(funcs):
                     writer.writerow({'configuration': key, 'function': func.__name__, 'value': float(value[i])})
 
-def main(PRETRAIN=False,
-         LEARN_MASK=False,
-         RETRAIN=False,
+def main(PRETRAIN=True,
+         LEARN_MASK=True,
+         RETRAIN=True,
          NON_UNIFORM=False,
          EPOCHS=1,
          IMAGE_PATH="natural_images/image_000.jpg",

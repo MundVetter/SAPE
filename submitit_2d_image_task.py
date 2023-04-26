@@ -16,7 +16,6 @@ def get_image_filenames(folder_path):
 
     return image_filenames
 
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--partition", type=str, default="gpu")
@@ -24,6 +23,8 @@ def parse_args():
     parser.add_argument("--array_parallelism", type=int, default=3)
     parser.add_argument("--controller_type", type=str, default="GlobalProgression")
     parser.add_argument("--n_epochs", type=int, default=1)
+    parser.add_argument("--eval", action="store_true", help="Set to evaluation mode")
+
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -43,7 +44,11 @@ if __name__ == "__main__":
         slurm_array_parallelism=args.array_parallelism
     )
 
+    pretrain = not args.eval
+    learn_mask = not args.eval
+    retrain = not args.eval
+
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-                executor.submit(main, IMAGE_PATH = str(Path("natural_images") / file_name), CONTROLLER_TYPE = controller_type, EPOCHS = args.n_epochs)
+                executor.submit(main, IMAGE_PATH=str(Path("natural_images") / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain)
