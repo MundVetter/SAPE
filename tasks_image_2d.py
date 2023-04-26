@@ -242,8 +242,8 @@ def pretty_print_results(results, name, funcs):
     print("=====================================")
 
 
-def save_results_to_csv(results, name, funcs, path):
-    file_name = path / f"{name}_results.csv"
+def save_results_to_csv(results, name, funcs, path, tag):
+    file_name = path / f"{name}_{tag}_results.csv"
     
     with open(file_name, mode='w', newline='') as csv_file:
         fieldnames = ['configuration', 'function', 'value']
@@ -306,7 +306,7 @@ def main(PRETRAIN=True,
         mask_model = encoding_controler.get_controlled_model(
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
-                            lambda_cost=0.001, mask_lr=1e-3)
+                            lambda_cost=0.0007, mask_lr=1e-3)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base).detach()
 
@@ -343,9 +343,9 @@ def main(PRETRAIN=True,
     pretty_print_results(res_test, "test", [psnr, ssim])
     pretty_print_results(res_masked, "test_masked", psnr)
 
-    save_results_to_csv(res_train, "train", psnr, out_path)
-    save_results_to_csv(res_test, "test", [psnr, ssim], out_path)
-    save_results_to_csv(res_masked, "test_masked", psnr, out_path)
+    save_results_to_csv(res_train, "train", psnr, out_path, tag)
+    save_results_to_csv(res_test, "test", [psnr, ssim], out_path, tag)
+    save_results_to_csv(res_masked, "test_masked", psnr, out_path, tag)
 
     return 0
 
