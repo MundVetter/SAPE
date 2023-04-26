@@ -225,7 +225,7 @@ def evaluate_configurations(model, model2, mask_model, vs_in, labels, funcs, dev
     labels = labels.to(device)
     _, mask = mask_model(vs_in)
     results[f"{name}_model_no_mask"] = evaluate(model, vs_in, labels, funcs, **kwargs)
-    results[f"{name}_model_mask"] = evaluate(model2, vs_in, labels, funcs, mask=mask, **kwargs)
+    results[f"{name}_model_mask"] = evaluate(model, vs_in, labels, funcs, mask=mask, **kwargs)
     results[f"{name}_model2_mask"] = evaluate(model2, vs_in, labels, funcs, mask=mask, **kwargs)
     return results
 
@@ -259,7 +259,7 @@ def save_results_to_csv(results, name, funcs, path, tag):
 
 def main(PRETRAIN=False,
          LEARN_MASK=False,
-         RETRAIN=True,
+         RETRAIN=False,
          NON_UNIFORM=False,
          EPOCHS=1,
          IMAGE_PATH="natural_images/image_000.jpg",
