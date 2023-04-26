@@ -257,9 +257,9 @@ def save_results_to_csv(results, name, funcs, path, tag):
                 for i, func in enumerate(funcs):
                     writer.writerow({'configuration': key, 'function': func.__name__, 'value': float(value[i])})
 
-def main(PRETRAIN=False,
-         LEARN_MASK=False,
-         RETRAIN=False,
+def main(PRETRAIN=True,
+         LEARN_MASK=True,
+         RETRAIN=True,
          NON_UNIFORM=False,
          EPOCHS=1,
          IMAGE_PATH="natural_images/image_000.jpg",
@@ -281,7 +281,7 @@ def main(PRETRAIN=False,
     control_params = encoding_controler.ControlParams(
         num_iterations=EPOCHS, epsilon=1e-3, res=128)
 
-    tag = f'{name}_{ENCODING_TYPE.value}_{CONTROLLER_TYPE.value}'
+    tag = f'{name}_{ENCODING_TYPE.value}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}'
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
     os.makedirs(out_path, exist_ok=True)
 
@@ -306,7 +306,7 @@ def main(PRETRAIN=False,
         mask_model = encoding_controler.get_controlled_model(
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
-                            lambda_cost=0.001, mask_lr=1e-3)
+                            lambda_cost=0.0007, mask_lr=1e-3)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base).detach()
 
@@ -322,10 +322,10 @@ def main(PRETRAIN=False,
 
     if RETRAIN:
         # only retrain last layer
-        # for param in model.parameters():
-        #     param.requires_grad = False
-        # for param in model.model.model.model[-3:].parameters():
-        #     param.requires_grad = True
+        for param in model.parameters():
+            param.requires_grad = False
+        for param in model.model.model.model[-3:].parameters():
+            param.requires_grad = True
         model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                           50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4)
         torch.save(model2.state_dict(), out_path / f'model2_{tag}.pt')
@@ -343,9 +343,10 @@ def main(PRETRAIN=False,
     pretty_print_results(res_test, "test", [psnr, ssim])
     pretty_print_results(res_masked, "test_masked", psnr)
 
-    save_results_to_csv(res_train, "train", psnr, out_path, tag)
-    save_results_to_csv(res_test, "test", [psnr, ssim], out_path, tag)
-    save_results_to_csv(res_masked, "test_masked", psnr, out_path, tag)
+    tag_without_filename = f"{ENCODING_TYPE.value}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}"
+    save_results_to_csv(res_train, "train", psnr, out_path, tag_without_filename)
+    save_results_to_csv(res_test, "test", [psnr, ssim], out_path, tag_without_filename)
+    save_results_to_csv(res_masked, "test_masked", psnr, out_path, tag_without_filename)
 
     return 0
 
