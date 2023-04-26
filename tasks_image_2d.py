@@ -243,7 +243,7 @@ def pretty_print_results(results, name, funcs):
 
 
 def save_results_to_csv(results, name, funcs, path, tag):
-    file_name = path / f"{name}_{tag}_results.csv"
+    file_name = path / f"{name}-{tag}-results.csv"
     
     with open(file_name, mode='w', newline='') as csv_file:
         fieldnames = ['configuration', 'function', 'value']
