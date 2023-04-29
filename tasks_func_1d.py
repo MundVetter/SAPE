@@ -100,8 +100,9 @@ def psine(x: T):
     return .5 * torch.sin(f_(x))
 
 
-class MaskOptimizer:
+class MaskOptimizer(nn.Module):
     def __init__(self, mask_model, frozen_model, weight_tensor, mask_lr=1e-4, lambda_cost=0.01):
+        super().__init__()
         self.mask_model = mask_model
         self.frozen_model = frozen_model
         self.optimizer = Optimizer(self.mask_model.parameters(), lr=mask_lr)
@@ -109,6 +110,9 @@ class MaskOptimizer:
         self.lambda_cost = lambda_cost
         self.encoding_dim  = frozen_model.encoding_dim
         self.weight_tensor = weight_tensor
+        self.num_freq = 128
+        # self.encode = encoding_models.GaussianRandomFourierFeatures(1, 128, 0.3).cuda()
+        self.encode2 = encoding_models.GaussianRandomFourierFeatures(1, 128, 20).cuda()
 
     def optimize_mask(self, vs_in, labels, num_iterations=1000):
         # Freeze the parameters of the frozen model
@@ -119,16 +123,11 @@ class MaskOptimizer:
             self.optimizer.zero_grad()
             # self.optimizer2.zero_grad()
 
-            mask_original = torch.sigmoid(self.mask_model(vs_in))
-            # mask_original = torch.threshold(torch.sigmoid(self.mask_model(vs_in)), 0.01, 0)
-            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 1)
-            ones = torch.ones_like(vs_in, device = vs_in.device)
-            mask = torch.cat([ones, mask], dim=-1)
-
+            mask_original, mask = self.forward(vs_in)
             frozen_model_output = self.frozen_model(vs_in, override_mask=mask)
 
             mse_loss = nnf.mse_loss(frozen_model_output, labels)
-            
+
             # Multiply the mask with the weight tensor before calculating the cost
             weighted_mask = mask_original * self.weight_tensor
             mask_cost = self.lambda_cost * weighted_mask.mean()
@@ -146,8 +145,21 @@ class MaskOptimizer:
             param.requires_grad = True
         return mask
 
-
-
+    def forward(self, vs_in):
+        # vs_in_encoded = self.encode(vs_in)
+        vs_in_encoded = vs_in
+        frequencies = self.frozen_model.model.encode.frequencies.squeeze() / 15.
+        frequencies_encoded = self.encode2(torch.unsqueeze(frequencies, 1))
+        # vs_repeated = vs_in_encoded.view(-1, self.num_freq * 2, 1).repeat(1, 1, frequencies.shape[0])
+        vs_repeated = vs_in_encoded.view(-1, 1, 1).repeat(1, 1, frequencies.shape[0])
+        frequencies_repeated = frequencies_encoded.view(1, self.num_freq * 2, -1).repeat(vs_in_encoded.shape[0], 1, 1)
+        inputs = torch.cat([vs_repeated, frequencies_repeated], dim=1)
+        mask_original = self.mask_model(inputs)
+        # mask_original = torch.threshold(torch.sigmoid(self.mask_model(vs_in)), 0.01, 0)
+        mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 1)
+        ones = torch.ones_like(vs_in, device = vs_in.device)
+        mask = torch.cat([ones, mask], dim=-1)
+        return mask_original, mask
 
 
 
@@ -210,6 +222,23 @@ def optimize(func: Function, encoding_type: EncodingType, model_params,
                             #    filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
     return model, vs_base, vs_in, labels
 
+class CNN1x1(nn.Module):
+    def __init__(self, input_channels, hidden_size):
+        super(CNN1x1, self).__init__()
+        self.conv1 = nn.Conv1d(input_channels, hidden_size, kernel_size=1)
+        self.relu = nn.ReLU()
+        self.conv_hidden = nn.Conv1d(hidden_size, hidden_size, kernel_size=1)
+        self.conv2 = nn.Conv1d(hidden_size, 1, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.conv_hidden(x)
+        x = self.relu(x)
+        x = self.conv2(x)
+        x = self.sigmoid(x)
+        return x
 
 def main() -> int:
     device = CUDA(0)
@@ -218,29 +247,30 @@ def main() -> int:
     func = Function(psine)
     num_samples = 25
     control_params = encoding_controler.ControlParams(num_iterations=4000, epsilon=1e-5, res=num_samples//2)
-    model_params = encoding_models.ModelParams(domain_dim=1, output_channels=1, num_frequencies=128,
+    model_params = encoding_models.ModelParams(domain_dim=1, output_channels=1, num_frequencies=256,
                                                hidden_dim=256, std=5., num_layers=2)
 
     model, vs_base, vs_in, labels = optimize(func, encoding_type, model_params, controller_type, control_params, num_samples, device, freq=500, verbose=True)
     model_copy = copy.deepcopy(model)
 
-    control_params_2 = encoding_controler.ControlParams(num_iterations=8000, epsilon=1e-5, res=num_samples//2)
+    control_params_2 = encoding_controler.ControlParams(num_iterations=1, epsilon=1e-5, res=num_samples//2)
     mask_model_params = encoding_models.ModelParams(domain_dim=1, output_channels=128, num_frequencies=128, hidden_dim=32, std=5., num_layers=2)
-    mask_model = encoding_controler.get_controlled_model(mask_model_params, encoding_type, control_params_2, controller_type).to(device)
+    mask_model = CNN1x1(1+256, 128).to(device)
     weight_tensor = model.model.encode.frequencies.abs()
 
     # weight_tensor = torch.log(model.model.encode.frequencies.abs()*100)
     # insert zero weight
     # weight_tensor = torch.cat( device=device), weight_tensor), dim=1)
-    mOpt = MaskOptimizer(mask_model, model, weight_tensor, lambda_cost=0.16)
+    mOpt = MaskOptimizer(mask_model, model, weight_tensor, lambda_cost=0.05)
     mask_2 = mOpt.optimize_mask(vs_in, labels, 8000).detach()
 
     model_2, vs_base, vs_in, labels = optimize(func, encoding_type, model_params, controller_type, control_params, num_samples, device, freq=500, verbose=True, mask=mask_2, model=model_copy)
-    base_mask = torch.sigmoid(mask_model(vs_base))
-    # base_mask = torch.threshold(torch.sigmoid(mask_model(vs_base)), 0.01, 0)
-    mask = torch.stack([base_mask, base_mask], dim=2).view(-1, 256)
-    ones = torch.ones_like(vs_base, device = vs_base.device)
-    mask = torch.cat([ones, mask], dim=-1) 
+    # base_mask = mask_model(vs_base)
+    # # base_mask = torch.threshold(torch.sigmoid(mask_model(vs_base)), 0.01, 0)
+    # mask = torch.stack([base_mask, base_mask], dim=2).view(-1, 256)
+    # ones = torch.ones_like(vs_base, device = vs_base.device)
+    # mask = torch.cat([ones, mask], dim=-1) 
+    _, mask = mOpt(vs_base)
 
     pred2 = model_2(vs_base, override_mask=mask).detach().cpu().numpy()
     pred = model(vs_base, override_mask=mask).detach().cpu().numpy()
@@ -254,6 +284,12 @@ def main() -> int:
     plt.plot(x, pred2, label='pred mask2')
     plt.plot(x, pred_unmasked, label='pred unmasked')
     plt.legend()
+    plt.show()
+
+    plt.plot(x, mask.detach().cpu().numpy().sum(1), label='mask')
+    plt.show()
+    
+    plt.imshow(mask[:, :128].detach().cpu().numpy())
     plt.show()
 
     return 0
