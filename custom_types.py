@@ -80,3 +80,5 @@ class DeformType(Enum):
     BEAUTY = 'beauty'
 
 
+if __name__ == "__main__":
+    print(ControllerType.__members__['NoControl'])

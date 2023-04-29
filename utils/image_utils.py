@@ -155,7 +155,7 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
     masked_cords = coords[masked]
     masked_labels = labels[masked]
     masked_image = masked_image.view(h, w, c)
-    return sample_labels, sample_cords, coords, masked_cords, masked_labels, masked_image, prob
+    return sample_labels, sample_cords, coords, masked_cords, masked_labels, masked_image, prob.float()
 
 
 
