@@ -18,6 +18,41 @@ class ModelParams:
         self.use_id_encoding = False
         self.fill_args(**kwargs)
 
+# class CNN1x1(nn.Module):
+#     def __init__(self, input_channels, hidden_size):
+#         super(CNN1x1, self).__init__()
+#         self.conv1 = nn.Conv1d(input_channels, hidden_size, kernel_size=1)
+#         self.relu = nn.ReLU()
+#         self.conv_hidden = nn.Conv1d(hidden_size, hidden_size, kernel_size=1)
+#         self.conv2 = nn.Conv1d(hidden_size, 1, kernel_size=1)
+#         self.sigmoid = nn.Sigmoid()
+
+#     def forward(self, x):
+#         x = self.conv1(x)
+#         x = self.relu(x)
+#         x = self.conv2(x)
+#         x = self.sigmoid(x)
+#         return x
+    
+class CNN1x1(nn.Module):
+    def __init__(self, layers: Union[List[int], Tuple[int, ...]]):
+        super(CNN1x1, self).__init__()
+
+        self.layers = nn.ModuleList()
+
+        for i in range(len(layers) - 1):
+            self.layers.append(nn.Conv1d(layers[i], layers[i + 1], kernel_size=1))
+            if i < len(layers) - 2:
+                self.layers.append(nn.ReLU())
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+
+        x = self.sigmoid(x)
+        return x
 
 class MLP(nn.Module):
 
@@ -92,25 +127,14 @@ class EncodedMlpModel(nn.Module, abc.ABC):
         self.encode = self.get_encoding_layer()
         self.model = self.get_mlp_model()
 
+class MultiEncodingLayer(EncodingLayer):
+    def __init__(self, encoders: List[EncodingLayer]):
+        super().__init__()
+        self.encoders = nn.ModuleList(encoders)
+        self.output_channels = sum(encoder.output_channels for encoder in self.encoders)
 
-class IdEncoding(EncodingLayer):
-
-    def forward(self, x):
-        return x
-
-    @property
-    def output_channels(self) -> int:
-        return self.domain_dim
-
-    def __init__(self, domain_dim: int):
-        super(IdEncoding, self).__init__()
-        self.domain_dim = domain_dim
-
-
-class BaseModel(EncodedMlpModel):
-
-    def get_encoding_layer(self) -> EncodingLayer:
-        return IdEncoding(self.opt.domain_dim)
+    def forward(self, x: T):
+        return torch.cat([self.encoders[i](x[..., i:i+1]) for i in range(x.shape[-1])], dim=-1)
 
 
 class FourierFeatures(EncodingLayer, abc.ABC):
@@ -139,6 +163,27 @@ class FourierFeatures(EncodingLayer, abc.ABC):
         self.num_frequencies: int = num_frequencies
         frequencies = self.init_frequencies(std)
         self.register_buffer("frequencies", frequencies)
+
+class IdEncoding(EncodingLayer):
+
+    def forward(self, x):
+        return x
+
+    @property
+    def output_channels(self) -> int:
+        return self.domain_dim
+
+    def __init__(self, domain_dim: int):
+        super(IdEncoding, self).__init__()
+        self.domain_dim = domain_dim
+
+
+class BaseModel(EncodedMlpModel):
+
+    def get_encoding_layer(self) -> EncodingLayer:
+        return IdEncoding(self.opt.domain_dim)
+
+
 
 
 class GaussianRandomFourierFeatures(FourierFeatures):
@@ -266,12 +311,14 @@ class RbfModel(EncodedMlpModel):
     def get_encoding_layer(self) -> EncodingLayer:
         return RadialBasisEncoding(self.opt.domain_dim, self.opt.num_frequencies, self.opt.std)
 
-
 class PrbfModel(EncodedMlpModel):
 
     def get_encoding_layer(self) -> EncodingLayer:
         return UniformRadialBasisGridEncoding(self.opt.domain_dim, self.opt.num_frequencies, self.opt.std)
 
+class MultiModel(EncodedMlpModel):
+    def get_encoding_layer(self) -> EncodingLayer:
+  
 
 def get_model(params: ModelParams, model_type: EncodingType) -> EncodedMlpModel:
     if model_type is EncodingType.FF:

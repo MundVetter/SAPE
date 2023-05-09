@@ -152,34 +152,40 @@ class MaskOptimizer(nn.Module):
 
 
 
-class Mask(nn.Module):
-    def __init__(self, frozen_model, mask_model, encoding_dim, num_freq):
-        super().__init__()
-        self.mask_model = mask_model
-        self.frozen_model = frozen_model
-        self.encoding_dim = encoding_dim
-        self.num_freq = num_freq
-        self.encode = encoding_models.GaussianRandomFourierFeatures(1, 128, 1.5).cuda()
-        # self.encode2 = encoding_models.GaussianRandomFourierFeatures(1, 128, 2).cuda()
-    def forward(self, vs_in):
-        # vs_in_encoded = self.encode(vs_in)
-        vs_in_encoded = vs_in
-        frequencies = self.frozen_model.model.encode.frequencies.squeeze() / 5.
-        # frequencies_encoded = self.encode2(torch.unsqueeze(frequencies, 1))
-        frequencies_encoded = frequencies
-        # vs_repeated = vs_in_encoded.view(-1, self.num_freq * 2, 1).repeat(1, 1, frequencies.shape[0])
-        vs_repeated = vs_in_encoded.view(-1, 1, 1).repeat(1, 1, frequencies.shape[0])
-        # frequencies_repeated = frequencies_encoded.view(1, self.num_freq * 2, -1).repeat(vs_in_encoded.shape[0], 1, 1)
-        frequencies_repeated = frequencies_encoded.view(1, 1, -1).repeat(vs_in_encoded.shape[0], 1, 1)
-        inputs = torch.cat([vs_repeated, frequencies_repeated], dim=1)
-        mask_original = self.mask_model(inputs)
-        # mask_original = nnf.threshold(mask_original, 0.001, 0)
-        # mask_original = torch.threshold(torch.sigmoid(self.mask_model(vs_in)), 0.01, 0)
-        mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 1)
-        ones = torch.ones_like(vs_in, device = vs_in.device)
-        mask = torch.cat([ones, mask], dim=-1)
-        return mask_original, mask
+# class Mask(nn.Module):
+#     def __init__(self, frozen_model, mask_model, encoding_dim, num_freq):
+#         super().__init__()
+#         self.mask_model = mask_model
+#         self.frozen_model = frozen_model
+#         self.encoding_dim = encoding_dim
+#         self.num_freq = num_freq
+#         self.encode = encoding_models.GaussianRandomFourierFeatures(1, 128, 1.5).cuda()
+#         # self.encode2 = encoding_models.GaussianRandomFourierFeatures(1, 128, 2).cuda()
+#     def forward(self, vs_in):
+#         # vs_in_encoded = self.encode(vs_in)
+#         vs_in_encoded = vs_in
+#         frequencies = self.frozen_model.model.encode.frequencies.squeeze() / 5.
+#         # frequencies_encoded = self.encode2(torch.unsqueeze(frequencies, 1))
+#         frequencies_encoded = frequencies
+#         # vs_repeated = vs_in_encoded.view(-1, self.num_freq * 2, 1).repeat(1, 1, frequencies.shape[0])
+#         vs_repeated = vs_in_encoded.view(-1, 1, 1).repeat(1, 1, frequencies.shape[0])
+#         # frequencies_repeated = frequencies_encoded.view(1, self.num_freq * 2, -1).repeat(vs_in_encoded.shape[0], 1, 1)
+#         frequencies_repeated = frequencies_encoded.view(1, 1, -1).repeat(vs_in_encoded.shape[0], 1, 1)
+#         inputs = torch.cat([vs_repeated, frequencies_repeated], dim=1)
+#         mask_original = self.mask_model(inputs)
+#         # mask_original = nnf.threshold(mask_original, 0.001, 0)
+#         # mask_original = torch.threshold(torch.sigmoid(self.mask_model(vs_in)), 0.01, 0)
+#         mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 1)
+#         ones = torch.ones_like(vs_in, device = vs_in.device)
+#         mask = torch.cat([ones, mask], dim=-1)
+#         return mask_original, mask
 
+class Mask(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+    def forward(self, vs_in, freq):
+        
 
 
 def optimize(func: Function, encoding_type: EncodingType, model_params,
@@ -241,23 +247,6 @@ def optimize(func: Function, encoding_type: EncodingType, model_params,
                             #    filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
     return model, vs_base, vs_in, labels
 
-class CNN1x1(nn.Module):
-    def __init__(self, input_channels, hidden_size):
-        super(CNN1x1, self).__init__()
-        self.conv1 = nn.Conv1d(input_channels, hidden_size, kernel_size=1)
-        self.relu = nn.ReLU()
-        self.conv_hidden = nn.Conv1d(hidden_size, hidden_size, kernel_size=1)
-        self.conv2 = nn.Conv1d(hidden_size, 1, kernel_size=1)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        # x = self.conv_hidden(x)
-        # x = self.relu(x)
-        x = self.conv2(x)
-        x = self.sigmoid(x)
-        return x
 
 def main() -> int:
     device = CUDA(0)
