@@ -110,6 +110,8 @@ class MaskOptimizer(nn.Module):
         self.encoding_dim  = frozen_model.encoding_dim
         self.weight_tensor = weight_tensor
         self.num_freq = 128
+        self.mask_1 = Mask(self.frozen_model, copy.deepcopy(mask_model), 1, 128)
+        self.mask_2 = Mask(copy.deepcopy(self.frozen_model), mask_model, 1, 128)
         self.encode = encoding_models.GaussianRandomFourierFeatures(1, 128, 1.5).cuda()
         # self.encode2 = encoding_models.GaussianRandomFourierFeatures(1, 128, 2).cuda()
 
@@ -122,9 +124,6 @@ class MaskOptimizer(nn.Module):
         for i in range(num_iterations):
             optimizer.zero_grad()
             # self.optimizer2.zero_grad()
-
-            mask_original, mask = self.forward(vs_in)
-            frozen_model_output = self.frozen_model(vs_in, override_mask=mask)
 
             mse_loss = nnf.mse_loss(frozen_model_output, labels)
 
@@ -144,6 +143,13 @@ class MaskOptimizer(nn.Module):
         for param in self.frozen_model.parameters():
             param.requires_grad = True
         return mask
+    def forward(self, vs_in):
+        mask_original, mask = self.mask_1.forward(vs_in)
+        
+
+        frozen_model_output = self.frozen_model(vs_in, override_mask=mask)
+
+
 
 
 class Mask(nn.Module):
