@@ -59,7 +59,6 @@ class EncodedController(nn.Module, abc.ABC):
 
 
 class NoControl(EncodedController):
-
     @property
     def name(self) -> str:
         return "no_control"

@@ -116,7 +116,7 @@ class EncodedMlpModel(nn.Module, abc.ABC):
 
     def forward(self, x: T, *args, **kwargs) -> T:
         base_code = self.get_encoding(x)
-        if 'override_mask' in kwargs:
+        if 'override_mask' in kwargs and kwargs['override_mask'] is not None:
             base_code = base_code * kwargs['override_mask']
         out = self.mlp_forward(base_code)
         return out
@@ -128,10 +128,13 @@ class EncodedMlpModel(nn.Module, abc.ABC):
         self.model = self.get_mlp_model()
 
 class MultiEncodingLayer(EncodingLayer):
-    def __init__(self, encoders: List[EncodingLayer]):
+    def __init__(self, encoders):
         super().__init__()
         self.encoders = nn.ModuleList(encoders)
-        self.output_channels = sum(encoder.output_channels for encoder in self.encoders)
+
+    @property
+    def output_channels(self) -> int:
+        return sum(encoder.output_channels for encoder in self.encoders)
 
     def forward(self, x: T):
         return torch.cat([self.encoders[i](x[..., i:i+1]) for i in range(x.shape[-1])], dim=-1)
@@ -318,7 +321,8 @@ class PrbfModel(EncodedMlpModel):
 
 class MultiModel(EncodedMlpModel):
     def get_encoding_layer(self) -> EncodingLayer:
-  
+        return MultiEncodingLayer(
+            [GaussianRandomFourierFeatures(self.opt.domain_dim // 2, self.opt.num_frequencies, self.opt.std), IdEncoding(self.opt.domain_dim // 2)])
 
 def get_model(params: ModelParams, model_type: EncodingType) -> EncodedMlpModel:
     if model_type is EncodingType.FF:

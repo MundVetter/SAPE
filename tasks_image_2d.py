@@ -257,9 +257,37 @@ def save_results_to_csv(results, name, funcs, path, tag):
                 for i, func in enumerate(funcs):
                     writer.writerow({'configuration': key, 'function': func.__name__, 'value': float(value[i])})
 
+class Mask(nn.Module):
+    def __init__(self, model, sigma_freq=5):
+        super().__init__()
+        self.model = model
+        self.sigma_freq = sigma_freq
+
+    def forward(self, vs_in, frequencies, mask=None):
+        freq = frequencies / (self.sigma_freq * 3)
+
+        # Repeat freq to match the number of rows in vs_in
+        freq_repeated = freq.repeat(vs_in.shape[0], 1).reshape(-1).unsqueeze(1)
+
+        # Repeat vs_in to match the size of freq
+        vs_in_repeated = vs_in.repeat_interleave(freq.shape[-1], dim=0)
+
+        # Concatenate vs_in and freq along the given dimension
+        merged = torch.cat((vs_in_repeated, freq_repeated), dim=1)
+
+        mask_original = self.model(merged, override_mask=mask).reshape(shape=(-1, freq.shape[-1]))
+        mask_original = torch.sigmoid(mask_original)
+
+
+        mask = torch.stack([mask_original, mask_original], dim=2).view(-1, freq.shape[-1] * 2)
+        ones = torch.ones_like(vs_in, device = vs_in.device)
+        mask = torch.cat([ones, mask], dim=-1)
+
+        return mask_original, mask
+
 def main(PRETRAIN=True,
          LEARN_MASK=True,
-         RETRAIN=True,
+         RETRAIN=False,
          NON_UNIFORM=False,
          EPOCHS=1,
          IMAGE_PATH="natural_images/image_000.jpg",
@@ -298,7 +326,6 @@ def main(PRETRAIN=True,
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
                                                     hidden_dim=256, std=5., num_layers=3)
     weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5
-    # weight_tensor = mean_of_groups(weight_tensor, 32).to(device)
     control_params_2 = encoding_controler.ControlParams(
         num_iterations=1000, epsilon=1e-5)
 
