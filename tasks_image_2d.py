@@ -338,7 +338,7 @@ def main(PRETRAIN=True,
         num_iterations=1000, epsilon=1e-5)
 
     if LEARN_MASK:
-        optMask = MaskModel(model, prob, lambda_cost=0.16)
+        optMask = MaskModel(model, prob, lambda_cost=0.01)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base).detach()
 
