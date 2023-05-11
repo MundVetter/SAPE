@@ -15,23 +15,23 @@ import csv
 
 
 
-def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, mask_model):
+def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY):
     model.eval()
     with torch.no_grad():
-        if model.is_progressive or mask_model is not None:
-            if mask_model is not None:
-                _, mask = mask_model(vs_in)
-                out = model(vs_in, override_mask=mask)
-            else:
-                out, mask = model(vs_in, get_mask=True)
-            if mask.dim() != out.dim():
-                mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
-            hm = mask.sum(1) / mask.shape[1]
-            hm = image_utils.to_heatmap(hm)
-            hm = hm.view(*ref_image.shape[:-1], 3)
-        else:
-            out = model(vs_in, get_mask=True)
-            hm = None
+        # if model.is_progressive or mask_model is not None:
+        #     if mask_model is not None:
+        #         _, mask = mask_model(vs_in)
+        #         out = model(vs_in, override_mask=mask)
+        #     else:
+        #         out, mask = model(vs_in, get_mask=True)
+        #     if mask.dim() != out.dim():
+        #         mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
+        #     hm = mask.sum(1) / mask.shape[1]
+        #     hm = image_utils.to_heatmap(hm)
+        #     hm = hm.view(*ref_image.shape[:-1], 3)
+        # else:
+        out = model(vs_in)
+        hm = None
         out = out.view(ref_image.shape)
     model.train()
 
@@ -39,76 +39,116 @@ def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image:
 
 
 class MaskModel(nn.Module):
-    def __init__(self, mask_model, frozen_model, weight_tensor, prob, mask_lr=1e-4, lambda_cost=0.01):
+    def __init__(self, frozen_model, prob, lambda_cost=0.01):
         super().__init__()
-        self.mask_model = mask_model
         self.frozen_model = frozen_model
-        self.optimizer = Optimizer(self.mask_model.parameters(), lr=mask_lr)
-        self.optimizer2 = Optimizer(self.frozen_model.parameters(), lr=mask_lr)
         self.lambda_cost = lambda_cost
         self.encoding_dim = frozen_model.encoding_dim
-        self.weight_tensor = weight_tensor
-        self.device = next(self.mask_model.parameters()).device
+
+        self.device = next(self.frozen_model.parameters()).device
+        
+        model_params2 = encoding_models.ModelParams(domain_dim = 4, num_layers = 2, hidden_dim = 256, output_channels = 1)
+        self.mask1 = Mask(encoding_models.BaseModel(model_params2)).to(self.device)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 2, domain_dim = 4, num_layers = 2, hidden_dim = 256, output_channels = 1)
+        self.mask2 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
+
+
         inv_prob = (1. / prob).float().to(self.device)
         inv_prob = inv_prob / inv_prob.mean()
         self.inv_prob = inv_prob
 
     def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None):
+        optimizer = Optimizer(self.parameters(), lr=1e-4,)
         # Freeze the parameters of the frozen model
-        for param in self.frozen_model.parameters():
-            param.requires_grad = False
-
         logger = train_utils.Logger().start(num_iterations)
         vs_in, labels = vs_in.to(self.device), labels.to(self.device)
         for i in range(num_iterations):
-            self.optimizer.zero_grad()
-            # self.optimizer2.zero_grad()
+            optimizer.zero_grad()
 
-            mask_original, mask = self.forward(vs_in)
-            frozen_model_output = self.frozen_model(vs_in, override_mask=mask)
+            mask_loss, mask, out = self.forward(vs_in)
 
             mse_loss = nnf.mse_loss(
-                frozen_model_output, labels, reduction='none')
+                out, labels, reduction='none')
             mse_loss = mse_loss.mean(1) * self.inv_prob
             mse_loss = mse_loss.mean()
 
             # Multiply the mask with the weight tensor before calculating the cost
-            weighted_mask = mask_original * self.weight_tensor
-            weighted_mask = weighted_mask.mean(1) * self.inv_prob
-            mask_cost = self.lambda_cost * weighted_mask.mean()
-            total_loss = mse_loss + mask_cost
-            logger.stash_iter('mse_train', mse_loss)
+            total_loss = mse_loss + mask_loss
+            logger.stash_iter({'mse_train': mse_loss, "mask_loss": mask_loss, "total_loss": total_loss})
 
             if i % 100 == 0 and vs_base is not None:
-                export_images(self.frozen_model, image, out_path, tag, vs_base, self.device, self, i)
+                export_images(self, image, out_path, tag, vs_base, self.device, i = i)
 
             total_loss.backward()
-            self.optimizer.step()
-            # self.optimizer2.step()
+            optimizer.step()
             logger.reset_iter()
         logger.stop()
 
-        # unfreeze the parameters of the frozen model
-        for param in self.frozen_model.parameters():
-            param.requires_grad = True
         return mask
 
     def forward(self, vs_in):
-        mask_original = torch.sigmoid(self.mask_model(vs_in))
-        # check if model is progressive
-        if self.frozen_model.is_progressive:
-            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
-            ones = torch.ones_like(vs_in, device=vs_in.device)
-            mask = torch.cat([ones, mask], dim=-1)
+        freq1 = self.mask2.model.encode.encoders[0].frequencies
+        mask_original, mask = self.mask1.forward(vs_in, frequencies=freq1)
+        ones = torch.ones_like(vs_in, device = vs_in.device)
+        mask = torch.cat([ones, mask], dim=-1)
+        mask = mask.repeat_interleave(self.frozen_model.model.encode.frequencies.shape[-1], dim=0)
+        freq2 = self.frozen_model.model.encode.frequencies
+        mask_original2, mask2 = self.mask2.forward(vs_in, frequencies = freq2, mask=mask)
+
+        out = self.frozen_model(vs_in, override_mask=mask2)
+
+        mask_cost = self.mask_loss(mask_original, freq1)
+        mask_cost2 = self.mask_loss(mask_original2, freq2)
+
+        if self.training:
+            return mask_cost + mask_cost2, mask, out
         else:
-            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim)
+            return out
+
+        # check if model is progressive
+        # if self.frozen_model.is_progressive:
+        #     mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
+        #     ones = torch.ones_like(vs_in, device=vs_in.device)
+        #     mask = torch.cat([ones, mask], dim=-1)
+        # else:
+        #     mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim)
+    
+    def mask_loss(self, mask, freq):
+        return self.lambda_cost * (mask * (freq**2).sum(0)**0.5).mean()
+    
+class Mask(nn.Module):
+    def __init__(self, model, sigma_freq=5):
+        super().__init__()
+        self.model = model
+        self.sigma_freq = sigma_freq
+
+    def forward(self, vs_in, frequencies, mask=None):
+        freq = frequencies / (self.sigma_freq * 3)
+
+        # Repeat freq to match the number of rows in vs_in
+        freq_repeated = freq.repeat(vs_in.shape[0], 1).reshape(-1, 2)
+
+        # Repeat vs_in to match the size of freq
+        vs_in_repeated = vs_in.repeat_interleave(freq.shape[-1], dim=0)
+
+        # Concatenate vs_in and freq along the given dimension
+        merged = torch.cat((vs_in_repeated, freq_repeated), dim=1)
+
+        mask_original = self.model(merged, override_mask=mask).reshape(shape=(-1, freq.shape[-1]))
+        mask_original = torch.sigmoid(mask_original)
+
+
+        mask = torch.stack([mask_original, mask_original], dim=2).view(-1, freq.shape[-1] * 2)
+        ones = torch.ones_like(vs_in, device = vs_in.device)
+        mask = torch.cat([ones, mask], dim=-1)
+
         return mask_original, mask
     
 def export_images(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0):
     with torch.no_grad():
         extra = 'mask' if mask_model is not None else 'no_mask'
         out, hm = plot_image(
-                    model, vs_base.to(device), image, mask_model)
+                    model, vs_base.to(device), image)
         files_utils.export_image(
                     out, out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png')
         if hm is not None:
@@ -219,14 +259,11 @@ def mean_of_groups(tensor, num_groups):
 
     return output
 
-def evaluate_configurations(model, model2, mask_model, vs_in, labels, funcs, device, name="", **kwargs):
+def evaluate_configurations(model, vs_in, labels, funcs, device, name="", **kwargs):
     results = {}
     vs_in = vs_in.to(device)
     labels = labels.to(device)
-    _, mask = mask_model(vs_in)
     results[f"{name}_model_no_mask"] = evaluate(model, vs_in, labels, funcs, **kwargs)
-    results[f"{name}_model_mask"] = evaluate(model, vs_in, labels, funcs, mask=mask, **kwargs)
-    results[f"{name}_model2_mask"] = evaluate(model2, vs_in, labels, funcs, mask=mask, **kwargs)
     return results
 
 def pretty_print_results(results, name, funcs):
@@ -257,39 +294,11 @@ def save_results_to_csv(results, name, funcs, path, tag):
                 for i, func in enumerate(funcs):
                     writer.writerow({'configuration': key, 'function': func.__name__, 'value': float(value[i])})
 
-class Mask(nn.Module):
-    def __init__(self, model, sigma_freq=5):
-        super().__init__()
-        self.model = model
-        self.sigma_freq = sigma_freq
-
-    def forward(self, vs_in, frequencies, mask=None):
-        freq = frequencies / (self.sigma_freq * 3)
-
-        # Repeat freq to match the number of rows in vs_in
-        freq_repeated = freq.repeat(vs_in.shape[0], 1).reshape(-1).unsqueeze(1)
-
-        # Repeat vs_in to match the size of freq
-        vs_in_repeated = vs_in.repeat_interleave(freq.shape[-1], dim=0)
-
-        # Concatenate vs_in and freq along the given dimension
-        merged = torch.cat((vs_in_repeated, freq_repeated), dim=1)
-
-        mask_original = self.model(merged, override_mask=mask).reshape(shape=(-1, freq.shape[-1]))
-        mask_original = torch.sigmoid(mask_original)
-
-
-        mask = torch.stack([mask_original, mask_original], dim=2).view(-1, freq.shape[-1] * 2)
-        ones = torch.ones_like(vs_in, device = vs_in.device)
-        mask = torch.cat([ones, mask], dim=-1)
-
-        return mask_original, mask
-
 def main(PRETRAIN=True,
          LEARN_MASK=True,
          RETRAIN=False,
          NON_UNIFORM=False,
-         EPOCHS=1,
+         EPOCHS=4000,
          IMAGE_PATH="natural_images/image_000.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression) -> int:
@@ -304,10 +313,10 @@ def main(PRETRAIN=True,
                                max_res=512, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
-    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
+    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=2,
                                                hidden_dim=256, std=20., num_layers=3)
     control_params = encoding_controler.ControlParams(
-        num_iterations=EPOCHS, epsilon=1e-3, res=128)
+        num_iterations=1, epsilon=1e-3, res=128)
 
     tag = f'{name}_{ENCODING_TYPE.value}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}'
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
@@ -322,7 +331,6 @@ def main(PRETRAIN=True,
             model_params, ENCODING_TYPE, control_params, CONTROLLER_TYPE).to(device)
         model.load_state_dict(torch.load(out_path / f'model_{tag}.pt'))
 
-    model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
                                                     hidden_dim=256, std=5., num_layers=3)
     weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5
@@ -330,15 +338,12 @@ def main(PRETRAIN=True,
         num_iterations=1000, epsilon=1e-5)
 
     if LEARN_MASK:
-        mask_model = encoding_controler.get_controlled_model(
-            mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
-        optMask = MaskModel(mask_model, model, weight_tensor, prob,
-                            lambda_cost=0.0007, mask_lr=1e-3)
+        optMask = MaskModel(model, prob, lambda_cost=0.16)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base).detach()
 
         torch.save(mask, out_path / 'mask.pt')
-        torch.save(mask_model.state_dict(), out_path / f'mask_model_{tag}.pt')
+        torch.save(optMask.state_dict(), out_path / f'mask_model_{tag}.pt')
     else:
         mask = torch.load(out_path / 'mask.pt')
         mask_model = encoding_controler.get_controlled_model(
@@ -347,24 +352,24 @@ def main(PRETRAIN=True,
             out_path / f'mask_model_{tag}.pt'))
         optMask = MaskModel(mask_model, model, weight_tensor, prob, lambda_cost=0.16)
 
-    if RETRAIN:
-        # only retrain last layer
-        for param in model.parameters():
-            param.requires_grad = False
-        for param in model.model.model.model[-3:].parameters():
-            param.requires_grad = True
-        model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                          50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4)
-        torch.save(model2.state_dict(), out_path / f'model2_{tag}.pt')
-    else:
-        model2 = encoding_controler.get_controlled_model(
-            model_params, ENCODING_TYPE, control_params, CONTROLLER_TYPE).to(device)
-        model2.load_state_dict(torch.load(out_path / f'model2_{tag}.pt'))
+    # if RETRAIN:
+    #     # only retrain last layer
+    #     for param in model.parameters():
+    #         param.requires_grad = False
+    #     for param in model.model.model.model[-3:].parameters():
+    #         param.requires_grad = True
+    #     model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
+    #                       50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4)
+    #     torch.save(model2.state_dict(), out_path / f'model2_{tag}.pt')
+    # else:
+    #     model2 = encoding_controler.get_controlled_model(
+    #         model_params, ENCODING_TYPE, control_params, CONTROLLER_TYPE).to(device)
+    #     model2.load_state_dict(torch.load(out_path / f'model2_{tag}.pt'))
 
     # Evaluation
-    res_train = evaluate_configurations(model_copy, model2, optMask, vs_in, labels, psnr, device, "train")
-    res_test = evaluate_configurations(model_copy, model2, optMask, vs_base, image_labels, [psnr, ssim], device, "test", img_shape = target_image.shape)
-    res_masked = evaluate_configurations(model_copy, model2, optMask, masked_cords, masked_labels, psnr, device, "test_masked")
+    res_train = evaluate_configurations(model, vs_in, labels, psnr, device, "train")
+    res_test = evaluate_configurations(model, vs_base, image_labels, [psnr, ssim], device, "test", img_shape = target_image.shape)
+    res_masked = evaluate_configurations(model, masked_cords, masked_labels, psnr, device, "test_masked")
 
     pretty_print_results(res_train, "train", psnr)
     pretty_print_results(res_test, "test", [psnr, ssim])

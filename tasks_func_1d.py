@@ -110,7 +110,7 @@ class MaskOptimizer(nn.Module):
         self.num_freq = 128
         model_params2 = encoding_models.ModelParams(domain_dim = 2, num_layers = 2, hidden_dim = 256, output_channels = 1)
         self.mask_1 = Mask(encoding_models.BaseModel(model_params2)).to(device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 128, domain_dim = 2, num_layers = 2, hidden_dim = 256, output_channels = 1)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 128, domain_dim = 3, num_layers = 2, hidden_dim = 256, output_channels = 1)
         self.mask_2 = Mask(encoding_models.MultiModel(model_params)).to(device)
 
     def optimize_mask(self, vs_in, labels, num_iterations=1000):

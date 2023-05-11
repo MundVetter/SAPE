@@ -139,6 +139,23 @@ class MultiEncodingLayer(EncodingLayer):
     def forward(self, x: T):
         return torch.cat([self.encoders[i](x[..., i:i+1]) for i in range(x.shape[-1])], dim=-1)
 
+class MultiEncodingLayer2(EncodingLayer):
+    def __init__(self, encoders: List[Tuple[EncodingLayer, List[int]]]):
+        super().__init__()
+        self.encoders = nn.ModuleList([encoder for encoder, _ in encoders])
+        self.dim_indices = [indices for _, indices in encoders]
+
+    @property
+    def output_channels(self) -> int:
+        return sum(encoder.output_channels for encoder in self.encoders)
+
+    def forward(self, x: T):
+        encoded_parts = []
+        for encoder, indices in zip(self.encoders, self.dim_indices):
+            # Apply the encoder to its corresponding dimensions and concatenate the results. 
+            encoded_parts.append(encoder(torch.cat([x[..., i:i+1] for i in indices], dim=-1)))
+        return torch.cat(encoded_parts, dim=-1)
+
 
 class FourierFeatures(EncodingLayer, abc.ABC):
 
@@ -323,6 +340,12 @@ class MultiModel(EncodedMlpModel):
     def get_encoding_layer(self) -> EncodingLayer:
         return MultiEncodingLayer(
             [GaussianRandomFourierFeatures(self.opt.domain_dim // 2, self.opt.num_frequencies, self.opt.std), IdEncoding(self.opt.domain_dim // 2)])
+    
+class MultiModel2(EncodedMlpModel):
+    def get_encoding_layer(self) -> EncodingLayer:
+        return MultiEncodingLayer2(
+            [(GaussianRandomFourierFeatures(self.opt.domain_dim // 2, self.opt.num_frequencies, self.opt.std), [0, 1])])
+
 
 def get_model(params: ModelParams, model_type: EncodingType) -> EncodedMlpModel:
     if model_type is EncodingType.FF:
