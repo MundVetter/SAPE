@@ -78,8 +78,8 @@ class MaskModel(nn.Module):
             total_loss = mse_loss + mask_loss
             logger.stash_iter({'mse_train': mse_loss, "mask_loss": mask_loss, "total_loss": total_loss})
 
-            if i % 100 == 0 and vs_base is not None:
-                export_images(self, image, out_path, tag, vs_base, self.device, i = i)
+            # if i % 100 == 0 and vs_base is not None:
+                # export_images(self, image, out_path, tag, vs_base, self.device, i = i)
 
             total_loss.backward()
             optimizer.step()
@@ -320,7 +320,7 @@ def main(PRETRAIN=True,
                                max_res=512, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
-    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=16,
+    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=128,
                                                hidden_dim=256, std=20., num_layers=3)
     control_params = encoding_controler.ControlParams(
         num_iterations=1, epsilon=1e-3, res=128)
