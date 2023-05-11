@@ -49,7 +49,7 @@ class MaskModel(nn.Module):
         
         model_params2 = encoding_models.ModelParams(domain_dim = 4, num_layers = 2, hidden_dim = 256, output_channels = 1)
         self.mask1 = Mask(encoding_models.BaseModel(model_params2)).to(self.device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 2, domain_dim = 4, num_layers = 2, hidden_dim = 256, output_channels = 1)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 128, domain_dim = 4, num_layers = 2, hidden_dim = 256, output_channels = 1)
         self.mask2 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
 
 
@@ -313,7 +313,7 @@ def main(PRETRAIN=True,
                                max_res=512, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
-    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=2,
+    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=128,
                                                hidden_dim=256, std=20., num_layers=3)
     control_params = encoding_controler.ControlParams(
         num_iterations=1, epsilon=1e-3, res=128)
