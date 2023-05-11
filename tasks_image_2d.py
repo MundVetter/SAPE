@@ -58,7 +58,7 @@ class MaskModel(nn.Module):
         self.inv_prob = inv_prob
 
     def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None):
-        optimizer = Optimizer(self.parameters(), lr=1e-4,)
+        optimizer = Optimizer(self.parameters(), lr=1e-3,)
         # Freeze the parameters of the frozen model
         logger = train_utils.Logger().start(num_iterations)
         vs_in, labels = vs_in.to(self.device), labels.to(self.device)
