@@ -47,11 +47,11 @@ class MaskModel(nn.Module):
 
         self.device = next(self.frozen_model.parameters()).device
         
-        model_params2 = encoding_models.ModelParams(domain_dim = 4, num_layers = 2, hidden_dim = 128, output_channels = 1)
+        model_params2 = encoding_models.ModelParams(domain_dim = 4, num_layers = 1, hidden_dim = 16, output_channels = 1)
         self.mask1 = Mask(encoding_models.BaseModel(model_params2)).to(self.device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 2, hidden_dim = 128, output_channels = 1)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 1, hidden_dim = 16, output_channels = 1)
         self.mask2 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 2, hidden_dim = 128, output_channels = 1)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 1, hidden_dim = 16, output_channels = 1)
         self.mask3 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
 
 
@@ -78,8 +78,8 @@ class MaskModel(nn.Module):
             total_loss = mse_loss + mask_loss
             logger.stash_iter({'mse_train': mse_loss, "mask_loss": mask_loss, "total_loss": total_loss})
 
-            # if i % 100 == 0 and vs_base is not None:
-                # export_images(self, image, out_path, tag, vs_base, self.device, i = i)
+            if i % 100 == 0 and vs_base is not None:
+                export_images(self, image, out_path, tag, vs_base, self.device, i = i)
 
             total_loss.backward()
             optimizer.step()
