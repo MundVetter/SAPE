@@ -47,10 +47,12 @@ class MaskModel(nn.Module):
 
         self.device = next(self.frozen_model.parameters()).device
         
-        model_params2 = encoding_models.ModelParams(domain_dim = 4, num_layers = 2, hidden_dim = 256, output_channels = 1)
+        model_params2 = encoding_models.ModelParams(domain_dim = 4, num_layers = 2, hidden_dim = 128, output_channels = 1)
         self.mask1 = Mask(encoding_models.BaseModel(model_params2)).to(self.device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 2, hidden_dim = 256, output_channels = 1)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 2, hidden_dim = 128, output_channels = 1)
         self.mask2 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 2, hidden_dim = 128, output_channels = 1)
+        self.mask3 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
 
 
         inv_prob = (1. / prob).float().to(self.device)
@@ -87,21 +89,26 @@ class MaskModel(nn.Module):
         return mask
 
     def forward(self, vs_in):
-        freq1 = self.mask2.model.encode.encoders[0].frequencies
-        mask_original, mask = self.mask1.forward(vs_in, frequencies=freq1)
+        freq2 = self.mask2.model.encode.encoders[0].frequencies
+        mask_original, mask = self.mask1.forward(vs_in, frequencies=freq2)
         ones = torch.ones_like(vs_in, device = vs_in.device)
         mask = torch.cat([ones, mask], dim=-1)
-        mask = mask.repeat_interleave(self.frozen_model.model.encode.frequencies.shape[-1], dim=0)
-        freq2 = self.frozen_model.model.encode.frequencies
-        mask_original2, mask2 = self.mask2.forward(vs_in, frequencies = freq2, mask=mask)
+        freq_model = self.frozen_model.model.encode.frequencies
+        freq3 = self.mask3.model.encode.encoders[0].frequencies
+        mask = mask.repeat_interleave(freq3.shape[-1], dim=0)
+        mask_original2, mask2 = self.mask2.forward(vs_in, frequencies = freq3, mask=mask)
+        mask2 = torch.cat([ones, mask2], dim=-1)
+        mask2 = mask2.repeat_interleave(freq_model.shape[-1], dim=0)
+        mask_original3, mask3 = self.mask3.forward(vs_in, frequencies = freq_model, mask=mask2)
 
-        out = self.frozen_model(vs_in, override_mask=mask2)
+        out = self.frozen_model(vs_in, override_mask=mask3)
 
-        mask_cost = self.mask_loss(mask_original, freq1)
-        mask_cost2 = self.mask_loss(mask_original2, freq2)
+        mask_cost = self.mask_loss(mask_original, freq2)
+        mask_cost2 = self.mask_loss(mask_original2, freq3)
+        mask_cost3 = self.mask_loss(mask_original3, freq_model)
 
         if self.training:
-            return mask_cost + mask_cost2, mask, out
+            return mask_cost + mask_cost2 + mask_cost3, mask, out
         else:
             return out
 
