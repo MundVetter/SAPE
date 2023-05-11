@@ -47,11 +47,11 @@ class MaskModel(nn.Module):
 
         self.device = next(self.frozen_model.parameters()).device
         
-        model_params2 = encoding_models.ModelParams(domain_dim = 4, num_layers = 1, hidden_dim = 16, output_channels = 1)
+        model_params2 = encoding_models.ModelParams(domain_dim = 4, num_layers = 1, hidden_dim = 128, output_channels = 1)
         self.mask1 = Mask(encoding_models.BaseModel(model_params2)).to(self.device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 1, hidden_dim = 16, output_channels = 1)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 1, hidden_dim = 128, output_channels = 1)
         self.mask2 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 1, hidden_dim = 16, output_channels = 1)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 1, hidden_dim = 128, output_channels = 1)
         self.mask3 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
 
 
