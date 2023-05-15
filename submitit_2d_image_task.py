@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument("--non_uniform", action="store_true", help="Set to non uniform sampling")
     parser.add_argument("--folder_name", type=str, default="natural_images")
     parser.add_argument("--timeout", type=int, default=24)
+    parser.add_argument("--batch_size", type=int, default=512**2)
 
     return parser.parse_args()
 
@@ -38,7 +39,7 @@ if __name__ == "__main__":
     controller_type = ControllerType.__members__[args.controller_type]
 
     executor.update_parameters(
-        timeout_min=24,
+        timeout_min=args.timeout,
         gpus_per_node=1,
         cpus_per_task=10,
         nodes=1,
@@ -54,4 +55,4 @@ if __name__ == "__main__":
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform)
+                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform, BATCH_SIZE=args.batch_size)
