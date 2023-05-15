@@ -59,7 +59,7 @@ def export_images(model, image, out_path, tag, vs_base, device, batch_size = 16*
                 wandb.log({f'heatmap_{tag}_{i}_{extra}': wandb.Image(str(out_path / f'heatmap_{tag}_{i}_{extra}' / f'{i:04d}.png'))})
 
 class MaskModel(nn.Module):
-    def __init__(self, model, prob, lambda_cost=0.16, num_masks = 3, num_freqs = 32, mask_hidden_dim = 128, mask_layers = 2):
+    def __init__(self, model, prob, lambda_cost=0.16, num_masks = 3, num_freqs = 30, mask_hidden_dim = 128, mask_layers = 2):
         super().__init__()
         self.model = model
         self.lambda_cost = lambda_cost
@@ -86,7 +86,7 @@ class MaskModel(nn.Module):
                 "mask_hidden_dim": mask_hidden_dim,
                 "mask_layers": mask_layers,
                 "num_freqs_mask": num_freqs,
-                "num_freqs_model": self.model.model.encode.frequencies.shape[0] // 2
+                "num_freqs_model": self.model.model.encode.frequencies.shape[1]
             })
 
     def fit(self, vs_in, labels, image, out_path, tag, batch_size = 4*4, num_iterations=1000, vs_base=None, lr= 1e-3):
@@ -131,7 +131,7 @@ class MaskModel(nn.Module):
 
     def forward(self, vs_in):
         ones = torch.ones_like(vs_in, device = vs_in.device)
-        loss_weights = [0.1, 0.2, 1.0]
+        loss_weights = [0.01, 0.1, 1.0]
         
         # List of frequencies for each mask, using next mask (or frozen_model for last mask)
         freqs = [mask.model.encode.encoders[0].frequencies for mask in self.masks[1:]] + [self.model.model.encode.frequencies]
@@ -364,7 +364,7 @@ def main(PRETRAIN=True,
                                max_res=512, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
-    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=128,
+    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=127,
                                                hidden_dim=256, std=20., num_layers=3)
     control_params = encoding_controler.ControlParams(
         num_iterations=1, epsilon=1e-3, res=128)
@@ -382,9 +382,6 @@ def main(PRETRAIN=True,
             model_params, ENCODING_TYPE, control_params, CONTROLLER_TYPE).to(device)
         model.load_state_dict(torch.load(out_path / f'model_{tag}.pt'))
 
-    mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=2,
-                                                    hidden_dim=256, std=5., num_layers=3)
-    weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5
     control_params_2 = encoding_controler.ControlParams(
         num_iterations=1000, epsilon=1e-5)
 
