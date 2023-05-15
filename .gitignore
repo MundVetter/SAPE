@@ -3,3 +3,4 @@ __pycache__/
 **_ig_**
 checkpoints/*
 logs/*
+wandb/

@@ -12,114 +12,168 @@ import os
 from pathlib import Path
 import math
 import csv
+import wandb
+
+
+def mask_to_hm(mask, out_shape, img_shape):
+    if mask.dim() != len(out_shape):
+        mask: T = mask.unsqueeze(0).expand(out_shape[0], mask.shape[0])
+    hm = mask.sum(1) / mask[:, 4:].sum(1).max()
+    hm = image_utils.to_heatmap(hm)
+    hm = hm.view(*img_shape[:-1], 3)
+    return hm
 
 
 
-def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY):
-    model.eval()
-    with torch.no_grad():
-        # if model.is_progressive or mask_model is not None:
-        #     if mask_model is not None:
-        #         _, mask = mask_model(vs_in)
-        #         out = model(vs_in, override_mask=mask)
-        #     else:
-        #         out, mask = model(vs_in, get_mask=True)
-        #     if mask.dim() != out.dim():
-        #         mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
-        #     hm = mask.sum(1) / mask.shape[1]
-        #     hm = image_utils.to_heatmap(hm)
-        #     hm = hm.view(*ref_image.shape[:-1], 3)
-        # else:
-        out = model(vs_in)
-        hm = None
-        out = out.view(ref_image.shape)
+def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, batch_size=16*16):
+    out, mask = model.predict(vs_in, batch_size=batch_size, return_mask = True)
+    # remove the first 4 channels (the mask)
+    mask = mask[:, 4:]
+    hms = []
+    hm = mask_to_hm(mask, out.shape, ref_image.shape)
+    hms.append(hm)
+
+    # create 4 new heatmaps each of a different section of the mask
+    mask_split = mask.shape[1] // 4
+    for i in range(4):
+        mask = mask[:, i * mask_split: (i + 1) * mask_split]
+        hm = mask_to_hm(mask, out.shape, ref_image.shape)
+        hms.append(hm)
+
+    out = out.view(ref_image.shape)
     model.train()
+    return out, hms
 
-    return out, hm
-
+def export_images(model, image, out_path, tag, vs_base, device, batch_size = 16*16, i = 0):
+    with torch.no_grad():
+        extra = 'mask'
+        out, hm = plot_image(
+                    model, vs_base.to(device), image, batch_size)
+        files_utils.export_image(
+                    out, out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png')
+        wandb.log({f'opt_{tag}_{extra}': wandb.Image(str(out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png'))})
+        if hm is not None:
+            for i, hm in enumerate(hm):
+                files_utils.export_image(
+                            hm, out_path / f'heatmap_{tag}_{i}_{extra}' / f'{i:04d}.png')
+                wandb.log({f'heatmap_{tag}_{extra}': wandb.Image(str(out_path / f'heatmap_{tag}_{i}_{extra}' / f'{i:04d}.png'))})
 
 class MaskModel(nn.Module):
-    def __init__(self, frozen_model, prob, lambda_cost=0.01):
+    def __init__(self, model, prob, lambda_cost=0.16, num_masks = 3, num_freqs = 32, mask_hidden_dim = 128, mask_layers = 2):
         super().__init__()
-        self.frozen_model = frozen_model
+        self.model = model
         self.lambda_cost = lambda_cost
-        self.encoding_dim = frozen_model.encoding_dim
+        self.encoding_dim = model.encoding_dim
 
-        self.device = next(self.frozen_model.parameters()).device
-        
-        model_params2 = encoding_models.ModelParams(domain_dim = 4, num_layers = 1, hidden_dim = 32, output_channels = 1)
-        self.mask1 = Mask(encoding_models.BaseModel(model_params2)).to(self.device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 1, hidden_dim = 32, output_channels = 1)
-        self.mask2 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 16, domain_dim = 4, num_layers = 1, hidden_dim = 32, output_channels = 1)
-        self.mask3 = Mask(encoding_models.MultiModel2(model_params)).to(self.device)
+        self.device = next(self.model.parameters()).device
 
+        self.masks = nn.ModuleList()
+        model_params = encoding_models.ModelParams(domain_dim = 4, num_layers = mask_layers, hidden_dim = mask_hidden_dim, output_channels = 1)
+        self.masks.append(Mask(encoding_models.BaseModel(model_params)).to(self.device))
+
+        for _ in range(num_masks - 1):
+            model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = num_freqs, domain_dim = 4, num_layers = mask_layers, hidden_dim = mask_hidden_dim, output_channels = 1, std = 20)
+            self.masks.append(Mask(encoding_models.MultiModel2(model_params)).to(self.device))
 
         inv_prob = (1. / prob).float().to(self.device)
         inv_prob = inv_prob / inv_prob.mean()
         self.inv_prob = inv_prob
 
-    def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None):
-        optimizer = Optimizer(self.parameters(), lr=1e-3,)
+        wandb.init(project="mund-thesis",
+            config={
+                "lambda_cost": self.lambda_cost,
+                "num_masks": len(self.masks),
+                "mask_hidden_dim": mask_hidden_dim,
+                "mask_layers": mask_layers,
+                "num_freqs_mask": num_freqs,
+                "num_freqs_model": self.model.model.encode.frequencies.shape[0] // 2
+            })
+
+    def fit(self, vs_in, labels, image, out_path, tag, batch_size = 4*4, num_iterations=1000, vs_base=None, lr= 1e-3):
+        optimizer = Optimizer(self.parameters(), lr=lr)
+        wandb.config.update({"lr": lr, "batch_size": batch_size, "num_iterations": num_iterations})
+        wandb.watch(self, log="all", log_freq=100)
         # Freeze the parameters of the frozen model
-        logger = train_utils.Logger().start(num_iterations)
+        logger = train_utils.Logger().start(num_iterations * math.ceil(vs_in.shape[0] / batch_size))
         vs_in, labels = vs_in.to(self.device), labels.to(self.device)
         for i in range(num_iterations):
-            optimizer.zero_grad()
+            # indices = torch.randperm(vs_in.shape[0]).to(self.device)
+            for b_idx in range(0, vs_in.shape[0], batch_size):
+                optimizer.zero_grad()
 
-            mask_loss, mask, out = self.forward(vs_in)
+                # selected_indices = indices[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
+                # vs_in_batch = vs_in[selected_indices]
+                # labels_batch = labels[selected_indices]
+                vs_in_batch = vs_in[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
+                labels_batch = labels[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
 
-            mse_loss = nnf.mse_loss(
-                out, labels, reduction='none')
-            mse_loss = mse_loss.mean(1) * self.inv_prob
-            mse_loss = mse_loss.mean()
+                mask_loss, mask, out = self.forward(vs_in_batch)
 
-            # Multiply the mask with the weight tensor before calculating the cost
-            total_loss = mse_loss + mask_loss
-            logger.stash_iter({'mse_train': mse_loss, "mask_loss": mask_loss, "total_loss": total_loss})
+                mse_loss = nnf.mse_loss(
+                    out, labels_batch, reduction='none')
+                # mse_loss = mse_loss.mean(1) * self.inv_prob
+                mse_loss = mse_loss.mean()
 
+                # Multiply the mask with the weight tensor before calculating the cost
+                total_loss = mse_loss + mask_loss
+                logger.stash_iter({'mse_train': mse_loss, "mask_loss": mask_loss, "total_loss": total_loss})
+                wandb.log({'mse_train': mse_loss, "mask_loss": mask_loss, "total_loss": total_loss})
+
+                total_loss.backward()
+                optimizer.step()
+                logger.reset_iter()
             if i % 100 == 0 and vs_base is not None:
-                export_images(self, image, out_path, tag, vs_base, self.device, i = i)
-
-            total_loss.backward()
-            optimizer.step()
-            logger.reset_iter()
+                export_images(self, image, out_path, tag, vs_base, self.device, batch_size, i = i)
         logger.stop()
+        wandb.finish()
 
         return mask
 
     def forward(self, vs_in):
-        freq2 = self.mask2.model.encode.encoders[0].frequencies
-        mask_original, mask = self.mask1.forward(vs_in, frequencies=freq2)
         ones = torch.ones_like(vs_in, device = vs_in.device)
-        mask = torch.cat([ones, mask], dim=-1)
-        freq_model = self.frozen_model.model.encode.frequencies
-        freq3 = self.mask3.model.encode.encoders[0].frequencies
-        mask = mask.repeat_interleave(freq3.shape[-1], dim=0)
-        mask_original2, mask2 = self.mask2.forward(vs_in, frequencies = freq3, mask=mask)
-        mask2 = torch.cat([ones, mask2], dim=-1)
-        mask2 = mask2.repeat_interleave(freq_model.shape[-1], dim=0)
-        mask_original3, mask3 = self.mask3.forward(vs_in, frequencies = freq_model, mask=mask2)
+        loss_weights = [0.1, 0.2, 1.0]
+        
+        # List of frequencies for each mask, using next mask (or frozen_model for last mask)
+        freqs = [mask.model.encode.encoders[0].frequencies for mask in self.masks[1:]] + [self.model.model.encode.frequencies]
 
-        out = self.frozen_model(vs_in, override_mask=mask3)
+        mask_original, mask = self.masks[0].forward(vs_in, frequencies=freqs[0])
+        if len(self.masks) > 1:
+            mask = torch.cat([ones, mask], dim=-1)
+        mask_costs = [self.mask_loss(mask_original, freqs[0]) * loss_weights[0]]
 
-        mask_cost = self.mask_loss(mask_original, freq2)
-        mask_cost2 = self.mask_loss(mask_original2, freq3)
-        mask_cost3 = self.mask_loss(mask_original3, freq_model)
+        for i in range(1, len(self.masks)):
+            mask = mask.repeat_interleave(freqs[i].shape[-1], dim=0)
+            mask_original, mask = self.masks[i].forward(vs_in, frequencies=freqs[i], mask=mask)
+            mask_costs.append(self.mask_loss(mask_original, freqs[i]) * loss_weights[i])
 
-        if self.training:
-            return mask_cost + mask_cost2 + mask_cost3, mask, out
+            if i < len(self.masks) - 1:
+                mask = torch.cat([ones, mask], dim=-1)
+
+        out = self.model(vs_in, override_mask=mask)
+
+        return sum(mask_costs), mask, out
+        
+    def predict(self, vs_in, batch_size = 16*16, return_mask=False):
+        self.eval()
+        out_all = None
+        mask_all = None
+        with torch.no_grad():
+            for b_idx in range(0, vs_in.shape[0], batch_size):
+                vs_in_batch = vs_in[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
+                _, mask, out = self.forward(vs_in_batch)
+
+                if out_all is None and mask_all is None:
+                    out_all = out
+                    mask_all = mask
+                else:
+                    out_all = torch.cat([out_all, out], dim=0)
+                    mask_all = torch.cat([mask_all, mask], dim=0)
+        self.train()
+        if return_mask:
+            return out_all, mask_all
         else:
-            return out
+            return out_all
 
-        # check if model is progressive
-        # if self.frozen_model.is_progressive:
-        #     mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
-        #     ones = torch.ones_like(vs_in, device=vs_in.device)
-        #     mask = torch.cat([ones, mask], dim=-1)
-        # else:
-        #     mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim)
-    
     def mask_loss(self, mask, freq):
         return self.lambda_cost * (mask * (freq**2).sum(0)**0.5).mean()
     
@@ -151,16 +205,6 @@ class Mask(nn.Module):
 
         return mask_original, mask
     
-def export_images(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0):
-    with torch.no_grad():
-        extra = 'mask' if mask_model is not None else 'no_mask'
-        out, hm = plot_image(
-                    model, vs_base.to(device), image)
-        files_utils.export_image(
-                    out, out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png')
-        if hm is not None:
-            files_utils.export_image(
-                        hm, out_path / f'heatmap_{tag}_{extra}' / f'{i:04d}.png')
 
 
 def optimize(encoding_type: EncodingType, model_params,
@@ -197,8 +241,8 @@ def optimize(encoding_type: EncodingType, model_params,
         logger.stash_iter('mse_train', loss)
         if block_iterations > 0 and (i + 1) % block_iterations == 0:
             model.update_progress()
-        if (((i + 1) % freq == 0) or (i == 0)) and verbose:
-            export_images(model, target_image, out_path, tag, vs_base, device, i = i, mask_model=mask_model)
+        if (((i + 1) % freq == 0) or (i == 3)) and verbose:
+            export_images(model, target_image, out_path, tag, vs_base, device, batch_size, i = i)
         logger.reset_iter()
     logger.stop()
 
@@ -241,7 +285,6 @@ def ssim(img1, img2, img_shape=None, window_size=11, k1=0.01, k2=0.03, L=1.0, **
     ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
 
     return torch.mean(ssim_map)
-
 
 def evaluate(model, vs_in, labels, funcs = [], mask=None, **kwargs):
     model.eval()
@@ -306,18 +349,21 @@ def main(PRETRAIN=True,
          RETRAIN=False,
          NON_UNIFORM=False,
          EPOCHS=4000,
-         IMAGE_PATH="natural_images/image_000.jpg",
+         IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression) -> int:
+    
+    # wandb.init(mode="disabled")
+
     device = CUDA(0)
     image_path = constants.DATA_ROOT / IMAGE_PATH
     os.makedirs(constants.CHECKPOINTS_ROOT, exist_ok=True)
     print(device)
     name = files_utils.split_path(IMAGE_PATH)[1]
 
-    scale = .25
+    scale = .5
     group = init_source_target(image_path, name, scale=scale,
-                               max_res=512, square=False, non_uniform_sampling=NON_UNIFORM)
+                               max_res=64, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=128,
@@ -338,15 +384,15 @@ def main(PRETRAIN=True,
             model_params, ENCODING_TYPE, control_params, CONTROLLER_TYPE).to(device)
         model.load_state_dict(torch.load(out_path / f'model_{tag}.pt'))
 
-    mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
+    mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=2,
                                                     hidden_dim=256, std=5., num_layers=3)
     weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5
     control_params_2 = encoding_controler.ControlParams(
         num_iterations=1000, epsilon=1e-5)
 
     if LEARN_MASK:
-        optMask = MaskModel(model, prob, lambda_cost=0.01)
-        mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
+        optMask = MaskModel(model, prob, lambda_cost=0.16)
+        mask = optMask.fit(vs_in, labels, target_image, out_path, tag, 512*4, EPOCHS,
                            vs_base=vs_base).detach()
 
         torch.save(mask, out_path / 'mask.pt')
