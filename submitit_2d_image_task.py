@@ -37,7 +37,7 @@ if __name__ == "__main__":
     controller_type = ControllerType.__members__[args.controller_type]
 
     executor.update_parameters(
-        timeout_min=20,
+        timeout_min=24,
         gpus_per_node=1,
         cpus_per_task=10,
         nodes=1,
