@@ -34,10 +34,10 @@ def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image:
     hms.append(hm)
 
     # create 4 new heatmaps each of a different section of the mask
-    mask_split = mask.shape[1] // 4
+    mask_split = (mask.shape[1] // 4) // 2
     for i in range(4):
-        mask = mask[:, i * mask_split: (i + 1) * mask_split]
-        hm = mask_to_hm(mask, out.shape, ref_image.shape)
+        mask_splitted = mask[:, i * mask_split: (i + 1) * mask_split]
+        hm = mask_to_hm(mask_splitted, out.shape, ref_image.shape)
         hms.append(hm)
 
     out = out.view(ref_image.shape)
@@ -56,7 +56,7 @@ def export_images(model, image, out_path, tag, vs_base, device, batch_size = 16*
             for i, hm in enumerate(hm):
                 files_utils.export_image(
                             hm, out_path / f'heatmap_{tag}_{i}_{extra}' / f'{i:04d}.png')
-                wandb.log({f'heatmap_{tag}_{extra}': wandb.Image(str(out_path / f'heatmap_{tag}_{i}_{extra}' / f'{i:04d}.png'))})
+                wandb.log({f'heatmap_{tag}_{i}_{extra}': wandb.Image(str(out_path / f'heatmap_{tag}_{i}_{extra}' / f'{i:04d}.png'))})
 
 class MaskModel(nn.Module):
     def __init__(self, model, prob, lambda_cost=0.16, num_masks = 3, num_freqs = 32, mask_hidden_dim = 128, mask_layers = 2):
@@ -352,8 +352,6 @@ def main(PRETRAIN=True,
          IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression) -> int:
-    
-    # wandb.init(mode="disabled")
 
     device = CUDA(0)
     image_path = constants.DATA_ROOT / IMAGE_PATH
@@ -361,9 +359,9 @@ def main(PRETRAIN=True,
     print(device)
     name = files_utils.split_path(IMAGE_PATH)[1]
 
-    scale = .5
+    scale = .25
     group = init_source_target(image_path, name, scale=scale,
-                               max_res=64, square=False, non_uniform_sampling=NON_UNIFORM)
+                               max_res=512, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=128,
@@ -392,7 +390,7 @@ def main(PRETRAIN=True,
 
     if LEARN_MASK:
         optMask = MaskModel(model, prob, lambda_cost=0.16)
-        mask = optMask.fit(vs_in, labels, target_image, out_path, tag, 512*4, EPOCHS,
+        mask = optMask.fit(vs_in, labels, target_image, out_path, tag, 256*256, EPOCHS,
                            vs_base=vs_base).detach()
 
         torch.save(mask, out_path / 'mask.pt')
