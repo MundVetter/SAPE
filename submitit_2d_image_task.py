@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument("--eval", action="store_true", help="Set to evaluation mode")
     parser.add_argument("--non_uniform", action="store_true", help="Set to non uniform sampling")
     parser.add_argument("--folder_name", type=str, default="natural_images")
+    parser.add_argument("--timeout", type=int, default=24)
 
     return parser.parse_args()
 
