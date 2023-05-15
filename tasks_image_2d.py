@@ -104,8 +104,12 @@ class MaskModel(nn.Module):
                 # selected_indices = indices[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
                 # vs_in_batch = vs_in[selected_indices]
                 # labels_batch = labels[selected_indices]
-                vs_in_batch = vs_in[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
-                labels_batch = labels[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
+                if batch_size >= vs_in.shape[0]:
+                    vs_in_batch = vs_in
+                    labels_batch = labels
+                else:
+                    vs_in_batch = vs_in[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
+                    labels_batch = labels[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
 
                 mask_loss, mask, out = self.forward(vs_in_batch)
 
