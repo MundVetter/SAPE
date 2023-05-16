@@ -25,10 +25,12 @@ def mask_to_hm(mask, out_shape, img_shape):
 
 
 
-def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, batch_size=16*16, i = 1):
+def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, batch_size=16*16, i = 1, labels = None):
     masks = []
     out, mask = model.predict(vs_in, batch_size=batch_size, return_mask = True)
     masks.append(mask)
+    if labels is not None:
+        wandb.log({"psnr eval": psnr(out, labels.to(out.device)).item()})
 
     for j in range(len(model.masks)  - 1):
         _, mask = model.predict(vs_in, batch_size=batch_size, return_mask = True, mask_num = j+1)
@@ -52,11 +54,11 @@ def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image:
     model.train()
     return out, hms
 
-def export_images(model, image, out_path, tag, vs_base, device, batch_size = 16*16, i = 0):
+def export_images(model, image, out_path, tag, vs_base, device, batch_size = 16*16, i = 0, labels = None):
     with torch.no_grad():
         extra = 'mask'
         out, hm = plot_image(
-                    model, vs_base.to(device), image, batch_size, i)
+                    model, vs_base.to(device), image, batch_size, i, labels)
         files_utils.export_image(
                     out, out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png')
         wandb.log({f'opt_{tag}_{extra}': wandb.Image(str(out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png'))})
@@ -102,7 +104,7 @@ class MaskModel(nn.Module):
             wandb.run.log_code(".")
 
 
-    def fit(self, vs_in, labels, image, out_path, tag, batch_size = 4*4, num_iterations=1000, vs_base=None, lr= 1e-3):
+    def fit(self, vs_in, labels, image, out_path, tag, batch_size = 4*4, num_iterations=1000, vs_base=None, lr= 1e-3, eval_labels = None):
         optimizer = Optimizer(self.parameters(), lr=lr)
         wandb.config.update({"lr": lr, "batch_size": batch_size, "num_iterations": num_iterations})
         wandb.watch(self, log="all", log_freq=100)
@@ -140,7 +142,7 @@ class MaskModel(nn.Module):
                 optimizer.step()
                 logger.reset_iter()
             if i % 100 == 0 and vs_base is not None:
-                export_images(self, image, out_path, tag, vs_base, self.device, batch_size, i = i)
+                export_images(self, image, out_path, tag, vs_base, self.device, batch_size, i = i, labels = eval_labels)
         logger.stop()
         wandb.finish()
 
@@ -415,7 +417,7 @@ def main(PRETRAIN=True,
     if LEARN_MASK:
         optMask = MaskModel(model, prob, lambda_cost=0.01)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, batch_size=BATCH_SIZE, num_iterations=EPOCHS,
-                           vs_base=vs_base).detach()
+                           vs_base=vs_base, eval_labels = image_labels).detach()
 
         torch.save(mask, out_path / 'mask.pt')
         torch.save(optMask.state_dict(), out_path / f'mask_model_{tag}.pt')
