@@ -99,6 +99,7 @@ class MaskModel(nn.Module):
                     "num_freqs_mask": num_freqs,
                     "num_freqs_model": self.model.model.encode.frequencies.shape[1]
                 })
+            wandb.run.log_code(".")
 
 
     def fit(self, vs_in, labels, image, out_path, tag, batch_size = 4*4, num_iterations=1000, vs_base=None, lr= 1e-3):
@@ -165,8 +166,8 @@ class MaskModel(nn.Module):
         for i in range(1, end):
             mask = mask.repeat_interleave(freqs[i].shape[-1], dim=0)
             # add a litle bit of noise to the mask
-            if self.training:
-                mask = mask + torch.randn_like(mask) * 0.01
+            # if self.training:
+            #     mask = mask + torch.randn_like(mask) * 0.01
 
             mask_original, mask = self.masks[i].forward(vs_in, frequencies=freqs[i], mask=mask)
             mask_costs.append(self.mask_loss(mask_original, freqs[i]) * loss_weights[i])
@@ -176,8 +177,8 @@ class MaskModel(nn.Module):
 
         for i, mask_cost in enumerate(mask_costs):
             wandb.log({f"mask_cost_{i}": mask_cost})
-        if self.training:
-            mask = mask + torch.randn_like(mask) * 0.01
+        # if self.training:
+        #     mask = mask + torch.randn_like(mask) * 0.01
         out = self.model(vs_in, override_mask=mask)
 
         return sum(mask_costs), mask, out
@@ -204,10 +205,13 @@ class MaskModel(nn.Module):
             return out_all
 
     def mask_loss(self, mask, freq):
-        return self.lambda_cost * (torch.log(mask + 1) * (freq**2).sum(0)**0.5).mean()
+        return self.lambda_cost * (torch.log(mask + 1) * dist(freq)).mean()
+    
+def dist(y):
+    return (y**2).sum(0)
     
 class Mask(nn.Module):
-    def __init__(self, model, sigma_freq=5):
+    def __init__(self, model, sigma_freq=20):
         super().__init__()
         self.model = model
         self.sigma_freq = sigma_freq
@@ -215,8 +219,8 @@ class Mask(nn.Module):
     def forward(self, vs_in, frequencies, mask=None):
         freq = frequencies / (self.sigma_freq * 3)
 
-        space_freq  = torch.mean(freq[:2, :], dim=0).unsqueeze(0)
-        freq_freq = torch.mean(freq[2:, :], dim=0).unsqueeze(0)
+        space_freq  = dist(freq[:2, :]).unsqueeze(0)
+        freq_freq = dist(freq[2:, :]).unsqueeze(0)
 
         freq = torch.cat([space_freq, freq_freq], dim=0)
 

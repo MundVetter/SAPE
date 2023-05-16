@@ -161,19 +161,23 @@ class MaskOptimizer(nn.Module):
         return mask_cost * 0.1+mask_cost2, mask2, out
 
     def mask_loss(self, mask, freq):
-        return self.lambda_cost * (torch.log(mask + 1) * (freq**2).sum(0)**0.5).mean()
+        return self.lambda_cost * (torch.log(mask + 1) * dist(freq)).mean()
 
+def dist(y):
+    return (y**2).sum(0)
 
 class Mask(nn.Module):
-    def __init__(self, model, sigma_freq=5):
+    def __init__(self, model, sigma_freq=20):
         super().__init__()
         self.model = model
         self.sigma_freq = sigma_freq
 
     def forward(self, vs_in, frequencies, mask=None):
-        freq = frequencies / (self.sigma_freq * 3)
+        freq = frequencies
 
-        freq_of_freq  = torch.mean(freq[1:, :], dim=0)
+        freq_of_freq  = dist(freq[1:, :]) 
+        freq_of_freq /= freq_of_freq.max()
+        # freq_of_freq  = torch.mean(freq[1:, :], dim=0)
 
         freq = torch.cat([freq[:1, :], freq_of_freq.unsqueeze(0)], dim=0)
 
@@ -279,7 +283,7 @@ def main() -> int:
     # insert zero weight
     # weight_tensor = torch.cat( device=device), weight_tensor), dim=1)
     mOpt = MaskOptimizer(model_copy, device=device, lambda_cost=0.16)
-    mask_2 = mOpt.optimize_mask(vs_in, labels, 8000).detach()
+    mask_2 = mOpt.optimize_mask(vs_in, labels, 4000).detach()
     
     model_2, vs_base, vs_in, labels = optimize(func, encoding_type, model_params, controller_type, control_params, num_samples, device, freq=500, verbose=True, mask=mask_2, model=model_copy)
     # base_mask = mask_model(vs_base)
