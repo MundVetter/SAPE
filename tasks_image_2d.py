@@ -164,12 +164,20 @@ class MaskModel(nn.Module):
 
         for i in range(1, end):
             mask = mask.repeat_interleave(freqs[i].shape[-1], dim=0)
+            # add a litle bit of noise to the mask
+            if self.training:
+                mask = mask + torch.randn_like(mask) * 0.01
+
             mask_original, mask = self.masks[i].forward(vs_in, frequencies=freqs[i], mask=mask)
             mask_costs.append(self.mask_loss(mask_original, freqs[i]) * loss_weights[i])
 
             if i < end - 1:
                 mask = torch.cat([ones, mask], dim=-1)
 
+        for i, mask_cost in enumerate(mask_costs):
+            wandb.log({f"mask_cost_{i}": mask_cost})
+        if self.training:
+            mask = mask + torch.randn_like(mask) * 0.01
         out = self.model(vs_in, override_mask=mask)
 
         return sum(mask_costs), mask, out
@@ -206,6 +214,11 @@ class Mask(nn.Module):
 
     def forward(self, vs_in, frequencies, mask=None):
         freq = frequencies / (self.sigma_freq * 3)
+
+        space_freq  = torch.mean(freq[:2, :], dim=0).unsqueeze(0)
+        freq_freq = torch.mean(freq[2:, :], dim=0).unsqueeze(0)
+
+        freq = torch.cat([space_freq, freq_freq], dim=0)
 
         # Repeat freq to match the number of rows in vs_in
         freq_repeated = freq.repeat(vs_in.shape[0], 1).reshape(-1, 2)
@@ -317,19 +330,6 @@ def evaluate(model, vs_in, labels, funcs = [], mask=None, **kwargs):
             out =  model(vs_in, override_mask=mask)
             return funcs(out, labels, **kwargs)
 
-def mean_of_groups(tensor, num_groups):
-    group_size = len(tensor) // num_groups
-    if group_size == 0:
-        raise ValueError("The number of groups should be less than or equal to the tensor length.")
-
-    output = torch.zeros(num_groups)
-    for i in range(num_groups):
-        start = i * group_size
-        end = start + group_size
-        output[i] = tensor[start:end].mean()
-
-    return output
-
 def evaluate_configurations(model, vs_in, labels, funcs, device, name="", **kwargs):
     results = {}
     vs_in = vs_in.to(device)
@@ -373,7 +373,8 @@ def main(PRETRAIN=True,
          IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
-         BATCH_SIZE = 2048) -> int:
+         BATCH_SIZE = 2048,
+         MAX_RES = 64) -> int:
 
     device = CUDA(0)
     image_path = constants.DATA_ROOT / IMAGE_PATH
@@ -383,7 +384,7 @@ def main(PRETRAIN=True,
 
     scale = .25
     group = init_source_target(image_path, name, scale=scale,
-                               max_res=64, square=False, non_uniform_sampling=NON_UNIFORM)
+                               max_res=MAX_RES, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=127,
@@ -408,7 +409,7 @@ def main(PRETRAIN=True,
         num_iterations=1000, epsilon=1e-5)
 
     if LEARN_MASK:
-        optMask = MaskModel(model, prob, lambda_cost=0.16)
+        optMask = MaskModel(model, prob, lambda_cost=0.01)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, batch_size=BATCH_SIZE, num_iterations=EPOCHS,
                            vs_base=vs_base).detach()
 

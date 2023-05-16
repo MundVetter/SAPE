@@ -95,7 +95,7 @@ def psine(x: T):
     a,  c, b = .01, 4.5, 4
 
     def f_(x_):
-        return a * (torch.clamp(x_, 0) * 2 + b) ** c
+        return a * (x_ * 2 + b) ** c
 
     return .5 * torch.sin(f_(x))
 
@@ -108,14 +108,14 @@ class MaskOptimizer(nn.Module):
         self.lambda_cost = lambda_cost
         self.encoding_dim  = frozen_model.encoding_dim
         self.num_freq = 128
-        model_params2 = encoding_models.ModelParams(domain_dim = 2, num_layers = 2, hidden_dim = 256, output_channels = 1)
+        model_params2 = encoding_models.ModelParams(domain_dim = 3, num_layers = 2, hidden_dim = 256, output_channels = 1)
         self.mask_1 = Mask(encoding_models.BaseModel(model_params2)).to(device)
         model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 128, domain_dim = 3, num_layers = 2, hidden_dim = 256, output_channels = 1)
-        self.mask_2 = Mask(encoding_models.MultiModel(model_params)).to(device)
+        self.mask_2 = Mask(encoding_models.MultiModel3(model_params)).to(device)
 
     def optimize_mask(self, vs_in, labels, num_iterations=1000):
         # Freeze the parameters of the frozen model
-        optimizer = Optimizer(self.parameters(), lr=0.001)
+        optimizer = Optimizer(self.parameters(), lr=1e-4)
         # for param in self.frozen_model.parameters():
         #     param.requires_grad = False
 
@@ -158,11 +158,10 @@ class MaskOptimizer(nn.Module):
         mask_cost = self.mask_loss(mask_original, freq1)
         mask_cost2 = self.mask_loss(mask_original2, freq2)
 
-        return mask_cost+mask_cost2, mask2, out
+        return mask_cost * 0.1+mask_cost2, mask2, out
 
-    def mask_loss(self, mask_original, freq):
-        mask_cost = (mask_original * freq.abs()).mean() * self.lambda_cost
-        return mask_cost
+    def mask_loss(self, mask, freq):
+        return self.lambda_cost * (torch.log(mask + 1) * (freq**2).sum(0)**0.5).mean()
 
 
 class Mask(nn.Module):
@@ -174,8 +173,12 @@ class Mask(nn.Module):
     def forward(self, vs_in, frequencies, mask=None):
         freq = frequencies / (self.sigma_freq * 3)
 
+        freq_of_freq  = torch.mean(freq[1:, :], dim=0)
+
+        freq = torch.cat([freq[:1, :], freq_of_freq.unsqueeze(0)], dim=0)
+
         # Repeat freq to match the number of rows in vs_in
-        freq_repeated = freq.repeat(vs_in.shape[0], 1).reshape(-1).unsqueeze(1)
+        freq_repeated = freq.repeat(vs_in.shape[0], 1).reshape(-1, 2)
 
         # Repeat vs_in to match the size of freq
         vs_in_repeated = vs_in.repeat_interleave(freq.shape[-1], dim=0)
@@ -184,7 +187,8 @@ class Mask(nn.Module):
         merged = torch.cat((vs_in_repeated, freq_repeated), dim=1)
 
         mask_original = self.model(merged, override_mask=mask).reshape(shape=(-1, freq.shape[-1]))
-        mask_original = torch.sigmoid(mask_original)
+        mask_original = nnf.silu(mask_original) + 0.2784645427610738
+        # mask_original = torch.sigmoid(mask_original)
 
 
         mask = torch.stack([mask_original, mask_original], dim=2).view(-1, freq.shape[-1] * 2)
@@ -275,7 +279,7 @@ def main() -> int:
     # insert zero weight
     # weight_tensor = torch.cat( device=device), weight_tensor), dim=1)
     mOpt = MaskOptimizer(model_copy, device=device, lambda_cost=0.16)
-    mask_2 = mOpt.optimize_mask(vs_in, labels, 4000).detach()
+    mask_2 = mOpt.optimize_mask(vs_in, labels, 8000).detach()
     
     model_2, vs_base, vs_in, labels = optimize(func, encoding_type, model_params, controller_type, control_params, num_samples, device, freq=500, verbose=True, mask=mask_2, model=model_copy)
     # base_mask = mask_model(vs_base)

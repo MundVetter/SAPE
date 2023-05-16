@@ -344,7 +344,13 @@ class MultiModel(EncodedMlpModel):
 class MultiModel2(EncodedMlpModel):
     def get_encoding_layer(self) -> EncodingLayer:
         return MultiEncodingLayer2(
-            [(GaussianRandomFourierFeatures(self.opt.domain_dim // 2, self.opt.num_frequencies, self.opt.std), [0, 1])])
+            [(GaussianRandomFourierFeatures(self.opt.domain_dim, self.opt.num_frequencies, self.opt.std), [0, 1, 2, 3])])
+
+class MultiModel3(EncodedMlpModel):
+    def get_encoding_layer(self) -> EncodingLayer:
+        return MultiEncodingLayer2(
+            [(GaussianRandomFourierFeatures(self.opt.domain_dim, self.opt.num_frequencies, self.opt.std), [0, 1, 2])])
+
 
 
 def get_model(params: ModelParams, model_type: EncodingType) -> EncodedMlpModel:
