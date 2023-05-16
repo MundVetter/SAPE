@@ -67,7 +67,7 @@ def export_images(model, image, out_path, tag, vs_base, device, batch_size = 16*
                 wandb.log({f'heatmap_{tag}_{j}_{extra}': wandb.Image(str(out_path / f'heatmap_{tag}_{j}_{extra}' / f'{i:04d}.png'))})
 
 class MaskModel(nn.Module):
-    def __init__(self, model, prob, lambda_cost=0.16, num_masks = 2, num_freqs = 30, mask_hidden_dim = 128, mask_layers = 2):
+    def __init__(self, model, prob, lambda_cost=0.16, num_masks = 3, num_freqs = 30, mask_hidden_dim = 128, mask_layers = 2):
         super().__init__()
         self.model = model
         self.lambda_cost = lambda_cost
@@ -147,7 +147,7 @@ class MaskModel(nn.Module):
 
     def forward(self, vs_in, last_mask = None):
         ones = torch.ones_like(vs_in, device = vs_in.device)
-        loss_weights = [0.1, 1.0]
+        loss_weights = [0.01, 0.1, 1.0]
         
         freqs = [mask.model.encode.encoders[0].frequencies for mask in self.masks[1:]] + [self.model.model.encode.frequencies]
 
@@ -196,7 +196,7 @@ class MaskModel(nn.Module):
             return out_all
 
     def mask_loss(self, mask, freq):
-        return self.lambda_cost * (mask * (freq**2).sum(0)**0.5).mean()
+        return self.lambda_cost * (torch.log(mask + 1) * (freq**2).sum(0)**0.5).mean()
     
 class Mask(nn.Module):
     def __init__(self, model, sigma_freq=5):
@@ -217,7 +217,7 @@ class Mask(nn.Module):
         merged = torch.cat((vs_in_repeated, freq_repeated), dim=1)
 
         mask_original = self.model(merged, override_mask=mask).reshape(shape=(-1, freq.shape[-1]))
-        mask_original = torch.sigmoid(mask_original)
+        mask_original = nnf.silu(mask_original) + 0.2784645427610738
 
 
         mask = torch.stack([mask_original, mask_original], dim=2).view(-1, freq.shape[-1] * 2)
@@ -408,7 +408,7 @@ def main(PRETRAIN=True,
         num_iterations=1000, epsilon=1e-5)
 
     if LEARN_MASK:
-        optMask = MaskModel(model, prob, lambda_cost=0.01)
+        optMask = MaskModel(model, prob, lambda_cost=0.16)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, batch_size=BATCH_SIZE, num_iterations=EPOCHS,
                            vs_base=vs_base).detach()
 
