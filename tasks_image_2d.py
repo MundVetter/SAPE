@@ -28,20 +28,23 @@ def mask_to_hm(mask, out_shape, img_shape):
 def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, batch_size=16*16, i = 1, labels = None):
     masks = []
     out, mask = model.predict(vs_in, batch_size=batch_size, return_mask = True)
-    masks.append(mask)
-    if labels is not None:
-        wandb.log({"psnr eval": psnr(out, labels.to(out.device)).item()})
-
-    for j in range(len(model.masks)  - 1):
-        _, mask = model.predict(vs_in, batch_size=batch_size, return_mask = True, mask_num = j+1)
+    if mask is not None:
         masks.append(mask)
+        if labels is not None:
+            wandb.log({"psnr eval": psnr(out, labels.to(out.device)).item()})
 
-    # remove the first 4 channels (the mask)
-    hms = []
-    for mask in masks:
-        mask = mask[:, 2:]
-        hm = mask_to_hm(mask, out.shape, ref_image.shape)
-        hms.append(hm)
+        for j in range(len(model.masks)  - 1):
+            _, mask = model.predict(vs_in, batch_size=batch_size, return_mask = True, mask_num = j+1)
+            masks.append(mask)
+
+        # remove the first 4 channels (the mask)
+        hms = []
+        for mask in masks:
+            mask = mask[:, 2:]
+            hm = mask_to_hm(mask, out.shape, ref_image.shape)
+            hms.append(hm)
+    else:
+        hms = None
 
     # create 4 new heatmaps each of a different section of the mask
     # mask_split = (mask.shape[1] // 4) // 2
@@ -69,7 +72,7 @@ def export_images(model, image, out_path, tag, vs_base, device, batch_size = 16*
                 wandb.log({f'heatmap_{tag}_{j}_{extra}': wandb.Image(str(out_path / f'heatmap_{tag}_{j}_{extra}' / f'{i:04d}.png'))})
 
 class MaskModel(nn.Module):
-    def __init__(self, model, prob, lambda_cost=0.16, num_masks = 3, num_freqs = 30, mask_hidden_dim = 128, mask_layers = 2):
+    def __init__(self, model, prob, lambda_cost=0.16, num_masks = 1, num_freqs = 30, mask_hidden_dim = 128, mask_layers = 2):
         super().__init__()
         self.model = model
         self.lambda_cost = lambda_cost
@@ -82,7 +85,7 @@ class MaskModel(nn.Module):
         self.masks.append(Mask(encoding_models.BaseModel(model_params)).to(self.device))
 
         for _ in range(num_masks - 1):
-            model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = num_freqs, domain_dim = 4, num_layers = mask_layers, hidden_dim = mask_hidden_dim, output_channels = 1, std = 20)
+            model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = num_freqs, domain_dim = 4, num_layers = mask_layers, hidden_dim = mask_hidden_dim, output_channels = 1, std = 5.)
             self.masks.append(Mask(encoding_models.MultiModel2(model_params)).to(self.device))
 
         inv_prob = (1. / prob).float().to(self.device)
@@ -126,7 +129,10 @@ class MaskModel(nn.Module):
                     vs_in_batch = vs_in[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
                     labels_batch = labels[b_idx:min(vs_in.shape[0], b_idx+batch_size)]
 
-                mask_loss, mask, out = self.forward(vs_in_batch)
+                if i < 2000:
+                    mask_loss, mask, out = self.forward(vs_in_batch, mask = None)
+                else:
+                    mask_loss, mask, out = self.forward(vs_in_batch, mask = True)
 
                 mse_loss = nnf.mse_loss(
                     out, labels_batch, reduction='none')
@@ -148,37 +154,41 @@ class MaskModel(nn.Module):
 
         return mask
 
-    def forward(self, vs_in, last_mask = None):
-        ones = torch.ones_like(vs_in, device = vs_in.device)
-        loss_weights = [0.01, 0.1, 1.0]
-        
-        freqs = [mask.model.encode.encoders[0].frequencies for mask in self.masks[1:]] + [self.model.model.encode.frequencies]
+    def forward(self, vs_in, last_mask = None, mask = True):
+        if mask is not None:
+            ones = torch.ones_like(vs_in, device = vs_in.device)
+            loss_weights = [1.0, 0., 1.0]
+            
+            freqs = [mask.model.encode.encoders[0].frequencies for mask in self.masks[1:]] + [self.model.model.encode.frequencies]
 
-        if last_mask is None:
-            end = len(self.masks)
-        else:
-            end = last_mask
-            freqs[end - 1] = self.model.model.encode.frequencies
+            if last_mask is None:
+                end = len(self.masks)
+            else:
+                end = last_mask
+                freqs[end - 1] = self.model.model.encode.frequencies
 
-        mask_original, mask = self.masks[0].forward(vs_in, frequencies=freqs[0])
-        if end > 1:
-            mask = torch.cat([ones, mask], dim=-1)
-        mask_costs = [self.mask_loss(mask_original, freqs[0]) * loss_weights[0]]
-
-        for i in range(1, end):
-            mask = mask.repeat_interleave(freqs[i].shape[-1], dim=0)
-            # add a litle bit of noise to the mask
-            # if self.training:
-            #     mask = mask + torch.randn_like(mask) * 0.01
-
-            mask_original, mask = self.masks[i].forward(vs_in, frequencies=freqs[i], mask=mask)
-            mask_costs.append(self.mask_loss(mask_original, freqs[i]) * loss_weights[i])
-
-            if i < end - 1:
+            mask_original, mask = self.masks[0].forward(vs_in, frequencies=freqs[0])
+            if end > 1:
                 mask = torch.cat([ones, mask], dim=-1)
+            mask_costs = [self.mask_loss(mask_original, freqs[0]) * loss_weights[0]]
 
-        for i, mask_cost in enumerate(mask_costs):
-            wandb.log({f"mask_cost_{i}": mask_cost})
+            for i in range(1, end):
+                mask = mask.repeat_interleave(freqs[i].shape[-1], dim=0)
+                # add a litle bit of noise to the mask
+                # if self.training:
+                #     mask = mask + torch.randn_like(mask) * 0.01
+
+                mask_original, mask = self.masks[i].forward(vs_in, frequencies=freqs[i], mask=mask)
+                mask_costs.append(self.mask_loss(mask_original, freqs[i]) * loss_weights[i])
+
+                if i < end - 1:
+                    mask = torch.cat([ones, mask], dim=-1)
+
+            for i, mask_cost in enumerate(mask_costs):
+                wandb.log({f"mask_cost_{i}": mask_cost})
+        else:
+            mask_costs = []
+            mask = 1
         # if self.training:
         #     mask = mask + torch.randn_like(mask) * 0.01
         out = self.model(vs_in, override_mask=mask)
