@@ -95,7 +95,7 @@ def psine(x: T):
     a,  c, b = .01, 4.5, 4
 
     def f_(x_):
-        return a * (x_ * 2 + b) ** c
+        return a * (torch.threshold(x_, 0, 0) * 2 + b) ** c
 
     return .5 * torch.sin(f_(x))
 
@@ -108,9 +108,9 @@ class MaskOptimizer(nn.Module):
         self.lambda_cost = lambda_cost
         self.encoding_dim  = frozen_model.encoding_dim
         self.num_freq = 128
-        model_params2 = encoding_models.ModelParams(domain_dim = 3, num_layers = 2, hidden_dim = 256, output_channels = 1)
+        model_params2 = encoding_models.ModelParams(domain_dim = 3, num_layers = 2, hidden_dim = 64, output_channels = 1)
         self.mask_1 = Mask(encoding_models.BaseModel(model_params2)).to(device)
-        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 128, domain_dim = 3, num_layers = 2, hidden_dim = 256, output_channels = 1)
+        model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = 128, domain_dim = 3, num_layers = 2, hidden_dim = 64, output_channels = 1)
         self.mask_2 = Mask(encoding_models.MultiModel3(model_params)).to(device)
 
     def optimize_mask(self, vs_in, labels, num_iterations=1000):
@@ -122,8 +122,10 @@ class MaskOptimizer(nn.Module):
         for i in range(num_iterations):
             optimizer.zero_grad()
             # self.optimizer2.zero_grad()
-            
-            mask_loss, mask, out = self.forward(vs_in)
+            if i < 1000:
+                mask_loss, mask, out = self.forward(vs_in, mask=False)
+            else:
+                mask_loss, mask, out = self.forward(vs_in, mask=True)
             mse_loss = nnf.mse_loss(out, labels)
 
             # Multiply the mask with the weight tensor before calculating the cost
@@ -142,23 +144,28 @@ class MaskOptimizer(nn.Module):
         return mask
 
 
-    def forward(self, vs_in):
-        freq1 = self.mask_2.model.encode.encoders[0].frequencies
-        mask_original, mask = self.mask_1.forward(vs_in, frequencies=freq1)
-        ones = torch.ones_like(vs_in, device = vs_in.device)
-        mask = torch.cat([ones, mask], dim=-1)
-        zeros = torch.zeros_like(vs_in, device = vs_in.device)
-        mask = torch.cat([mask, zeros], dim=-1)
-        mask = mask.repeat_interleave(self.frozen_model.model.encode.frequencies.shape[-1], dim=0)
-        freq2 = self.frozen_model.model.encode.frequencies
-        mask_original2, mask2 = self.mask_2.forward(vs_in, frequencies = freq2, mask=mask)
+    def forward(self, vs_in, mask = True):
+        if mask:
+            freq1 = self.mask_2.model.encode.encoders[0].frequencies
+            mask_original, mask = self.mask_1.forward(vs_in, frequencies=freq1)
+            ones = torch.ones_like(vs_in, device = vs_in.device)
+            mask = torch.cat([ones, mask], dim=-1)
+            zeros = torch.zeros_like(vs_in, device = vs_in.device)
+            mask = torch.cat([mask, zeros], dim=-1)
+            mask = mask.repeat_interleave(self.frozen_model.model.encode.frequencies.shape[-1], dim=0)
+            freq2 = self.frozen_model.model.encode.frequencies
+            mask_original2, mask2 = self.mask_2.forward(vs_in, frequencies = freq2, mask=mask)
+
+            mask_cost = self.mask_loss(mask_original, freq1)
+            mask_cost2 = self.mask_loss(mask_original2, freq2)
+        else:
+            mask2 = 1
+            mask_cost = 0
+            mask_cost2 = 0
         
         out = self.frozen_model(vs_in, override_mask=mask2)
 
-        mask_cost = self.mask_loss(mask_original, freq1)
-        mask_cost2 = self.mask_loss(mask_original2, freq2)
-
-        return mask_cost * 0.1+mask_cost2, mask2, out
+        return mask_cost + mask_cost2, mask2, out
 
     def mask_loss(self, mask, freq):
         return self.lambda_cost * (torch.log(mask + 1) * dist(freq)).mean()
