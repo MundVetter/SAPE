@@ -78,7 +78,7 @@ class MaskModel(nn.Module):
         self.masks.append(Mask(encoding_models.BaseModel(model_params)).to(self.device))
 
         for _ in range(num_masks - 1):
-            model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = num_freqs, domain_dim = 4, num_layers = mask_layers, hidden_dim = mask_hidden_dim, output_channels = 1, std = 5.)
+            model_params = encoding_models.ModelParams(use_id_encoding=True, num_frequencies = num_freqs, domain_dim = 4, num_layers = mask_layers, hidden_dim = mask_hidden_dim, output_channels = 1, std = 20.)
             self.masks.append(Mask(encoding_models.MultiModel2(model_params)).to(self.device))
 
         inv_prob = (1. / prob).float().to(self.device)
