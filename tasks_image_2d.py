@@ -332,7 +332,6 @@ def main(PRETRAIN=True,
         model = encoding_controler.get_controlled_model(
             model_params, ENCODING_TYPE, control_params, CONTROLLER_TYPE).to(device)
         model.load_state_dict(torch.load(out_path / f'model_{tag}.pt'))
-        del model.mask
 
     model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
