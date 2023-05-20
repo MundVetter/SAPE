@@ -52,13 +52,9 @@ if __name__ == "__main__":
         slurm_partition=args.partition,
         slurm_array_parallelism=args.array_parallelism
     )
-    pretrain = not args.no_pretrain
-    learn_mask = not args.no_mask
-    retrain = not args.no_retrain
-
-    pretrain = not args.eval
-    learn_mask = not args.eval
-    retrain = not args.eval
+    pretrain = not args.no_pretrain and not args.eval
+    learn_mask = not args.no_mask and not args.eval
+    retrain = not args.no_retrain and not args.eval
 
     with executor.batch():
         for i in range(args.n_runs):
