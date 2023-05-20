@@ -368,6 +368,7 @@ def main(PRETRAIN=True,
         model.model.model.model[-1].weight.requires_grad = False
         model.model.model.model[-1].bias.requires_grad = True
 
+        control_params.num_iterations = 200
         model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                           50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4, eval_labels = image_labels)
         torch.save(model2.state_dict(), out_path / f'model2_{tag}.pt')
