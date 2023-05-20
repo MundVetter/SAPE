@@ -553,12 +553,16 @@ class SpatialControllerStashed(ProgressiveEncoderController):
            return self.interpolate_(x)
 
     def forward(self, x: T, **kwargs):
-        if 'mask_by' in kwargs:
-            mask = self.interpolate(kwargs['mask_by'])
+        if 'override_mask' in kwargs and kwargs["override_mask"] is not None:
+            mask = kwargs["override_mask"]
         else:
-            mask = self.interpolate(x)
-        if 'expand_by' in kwargs:
-            mask = kwargs['expand_by'](mask, x)
+            if 'mask_by' in kwargs:
+                mask = self.interpolate(kwargs['mask_by'])
+            else:
+                mask = self.interpolate(x)
+            if 'expand_by' in kwargs:
+                mask = kwargs['expand_by'](mask, x)
+            
         out = self.model(x, override_mask=mask)
         if 'get_mask' in kwargs:
             return out, mask

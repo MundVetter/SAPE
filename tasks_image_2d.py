@@ -12,7 +12,8 @@ import os
 from pathlib import Path
 import math
 import csv
-
+import wandb
+from torchinfo import summary
 
 
 def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, mask_model):
@@ -26,7 +27,7 @@ def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image:
                 out, mask = model(vs_in, get_mask=True)
             if mask.dim() != out.dim():
                 mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
-            hm = mask.sum(1) / mask.shape[1]
+            hm = torch.abs(mask[:, 2:]).sum(1) / torch.abs(mask[:, 2:]).sum(1).max()
             hm = image_utils.to_heatmap(hm)
             hm = hm.view(*ref_image.shape[:-1], 3)
         else:
@@ -39,12 +40,12 @@ def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image:
 
 
 class MaskModel(nn.Module):
-    def __init__(self, mask_model, frozen_model, weight_tensor, prob, mask_lr=1e-4, lambda_cost=0.01):
+    def __init__(self, mask_model, frozen_model, weight_tensor, prob, lambda_cost=0.01, mask_act = lambda x: x):
         super().__init__()
         self.mask_model = mask_model
         self.frozen_model = frozen_model
-        self.optimizer = Optimizer(self.mask_model.parameters(), lr=mask_lr)
-        self.optimizer2 = Optimizer(self.frozen_model.parameters(), lr=mask_lr)
+        self.mask_act = mask_act
+        
         self.lambda_cost = lambda_cost
         self.encoding_dim = frozen_model.encoding_dim
         self.weight_tensor = weight_tensor
@@ -53,7 +54,9 @@ class MaskModel(nn.Module):
         inv_prob = inv_prob / inv_prob.mean()
         self.inv_prob = inv_prob
 
-    def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None):
+    def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, eval_labels = None):
+        wandb.config.update({'num_iterations': num_iterations, 'lr': lr, 'lambda_cost': self.lambda_cost})
+        optimizer = Optimizer(self.mask_model.parameters(), lr=lr)
         # Freeze the parameters of the frozen model
         for param in self.frozen_model.parameters():
             param.requires_grad = False
@@ -61,7 +64,7 @@ class MaskModel(nn.Module):
         logger = train_utils.Logger().start(num_iterations)
         vs_in, labels = vs_in.to(self.device), labels.to(self.device)
         for i in range(num_iterations):
-            self.optimizer.zero_grad()
+            optimizer.zero_grad()
             # self.optimizer2.zero_grad()
 
             mask_original, mask = self.forward(vs_in)
@@ -73,17 +76,20 @@ class MaskModel(nn.Module):
             mse_loss = mse_loss.mean()
 
             # Multiply the mask with the weight tensor before calculating the cost
-            weighted_mask = mask_original * self.weight_tensor
+            weighted_mask = torch.abs(mask_original) * self.weight_tensor
             weighted_mask = weighted_mask.mean(1) * self.inv_prob
             mask_cost = self.lambda_cost * weighted_mask.mean()
             total_loss = mse_loss + mask_cost
             logger.stash_iter('mse_train', mse_loss)
+            logger.stash_iter('mask_cost', mask_cost)
+            logger.stash_iter('total_loss', total_loss)
+            wandb.log({'mse_train': mse_loss, 'mask_cost': mask_cost, 'total_loss': total_loss})
 
             if i % 100 == 0 and vs_base is not None:
-                export_images(self.frozen_model, image, out_path, tag, vs_base, self.device, self, i)
+                log_evaluation_progress(self.frozen_model, image, out_path, tag, vs_base, self.device, self, i, labels = eval_labels)
 
             total_loss.backward()
-            self.optimizer.step()
+            optimizer.step()
             # self.optimizer2.step()
             logger.reset_iter()
         logger.stop()
@@ -94,7 +100,7 @@ class MaskModel(nn.Module):
         return mask
 
     def forward(self, vs_in):
-        mask_original = torch.sigmoid(self.mask_model(vs_in))
+        mask_original = self.mask_act(self.mask_model(vs_in))
         # check if model is progressive
         if self.frozen_model.is_progressive:
             mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
@@ -104,25 +110,32 @@ class MaskModel(nn.Module):
             mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim)
         return mask_original, mask
     
-def export_images(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0):
+def log_evaluation_progress(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0, labels = None):
     with torch.no_grad():
         extra = 'mask' if mask_model is not None else 'no_mask'
         out, hm = plot_image(
                     model, vs_base.to(device), image, mask_model)
+        if labels is not None:
+            wandb.log({'psnr eval': psnr(out.view(labels.shape), labels.to(device))})
         files_utils.export_image(
                     out, out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png')
+        wandb.log({'image': wandb.Image(str(out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png'))})
         if hm is not None:
             files_utils.export_image(
                         hm, out_path / f'heatmap_{tag}_{extra}' / f'{i:04d}.png')
+            wandb.log({f'heatmap': wandb.Image(str(out_path / f'heatmap_{tag}_{extra}' / f'{i:04d}.png'))})
 
 
 def optimize(encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controler.ControlParams, group, tag, out_path, device: D,
-             freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3):
+             freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None):
     vs_base, vs_in, labels, target_image, image_labels, _, prob = group
+    model_provided = True
     if model is None:
         model = encoding_controler.get_controlled_model(
             model_params, encoding_type, control_params, controller_type).to(device)
+        model_provided = False
+    wandb.watch(model)
     block_iterations = model.block_iterations
     vs_base, vs_in, labels, image_labels = vs_base.to(device), vs_in.to(
         device), labels.to(device), image_labels.to(device)
@@ -146,12 +159,15 @@ def optimize(encoding_type: EncodingType, model_params,
             print(loss)
         loss.backward()
         opt.step()
-        model.stash_iteration(loss_all.mean(-1))
+        if not model_provided:
+            model.stash_iteration(loss_all.mean(-1))
         logger.stash_iter('mse_train', loss)
-        if block_iterations > 0 and (i + 1) % block_iterations == 0:
+        wandb.log({'mse_train': loss})
+
+        if not model_provided and block_iterations > 0 and (i + 1) % block_iterations == 0:
             model.update_progress()
         if (((i + 1) % freq == 0) or (i == 0)) and verbose:
-            export_images(model, target_image, out_path, tag, vs_base, device, i = i, mask_model=mask_model)
+            log_evaluation_progress(model, target_image, out_path, tag, vs_base, device, i = i, mask_model=mask_model, labels = eval_labels)
         logger.reset_iter()
     logger.stop()
 
@@ -260,15 +276,35 @@ def save_results_to_csv(results, name, funcs, path, tag):
 def main(PRETRAIN=True,
          LEARN_MASK=True,
          RETRAIN=True,
-         NON_UNIFORM=False,
-         EPOCHS=1,
-         IMAGE_PATH="natural_images/image_000.jpg",
+         NON_UNIFORM=True,
+         EPOCHS=4000,
+         IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.GlobalProgression) -> int:
+         CONTROLLER_TYPE = ControllerType.SpatialProgressionStashed,
+         MASK_RES = 512) -> int:
+
+    if constants.DEBUG:
+        wandb.init(mode="disabled")
+    else:
+        wandb.init(project="mund-thesis",
+            config={
+                "pretrain": PRETRAIN,
+                "learn_mask": LEARN_MASK,
+                "retrain": RETRAIN,
+                "non_uniform": NON_UNIFORM,
+                "epochs": EPOCHS,
+                "image_path": IMAGE_PATH,
+                "encoding_type": ENCODING_TYPE,
+                "controller_type": CONTROLLER_TYPE,
+                "mask res": MASK_RES
+            })
+        wandb.run.log_code(".")
+
     device = CUDA(0)
+    print(device)
+
     image_path = constants.DATA_ROOT / IMAGE_PATH
     os.makedirs(constants.CHECKPOINTS_ROOT, exist_ok=True)
-    print(device)
     name = files_utils.split_path(IMAGE_PATH)[1]
 
     scale = .25
@@ -279,20 +315,25 @@ def main(PRETRAIN=True,
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                                hidden_dim=256, std=20., num_layers=3)
     control_params = encoding_controler.ControlParams(
-        num_iterations=EPOCHS, epsilon=1e-3, res=128)
+        num_iterations=EPOCHS, epsilon=1e-3, res=MASK_RES)
 
-    tag = f'{name}_{ENCODING_TYPE.value}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}'
+    tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}"
+    tag = f"{name}_{tag_without_filename}"
+
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
     os.makedirs(out_path, exist_ok=True)
 
     if PRETRAIN:
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                         50, verbose=True)
+                         50, verbose=True, eval_labels = image_labels)
+        wandb.watch(model)
+        # print(summary(model, input_data=vs_in.to(device)))
         torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
     else:
         model = encoding_controler.get_controlled_model(
             model_params, ENCODING_TYPE, control_params, CONTROLLER_TYPE).to(device)
         model.load_state_dict(torch.load(out_path / f'model_{tag}.pt'))
+        del model.mask
 
     model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
@@ -305,15 +346,16 @@ def main(PRETRAIN=True,
     if LEARN_MASK:
         mask_model = encoding_controler.get_controlled_model(
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
+        print(summary(mask_model, vs_in.shape))
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
-                            lambda_cost=0.0007, mask_lr=1e-3)
+                            lambda_cost=0.0007)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
-                           vs_base=vs_base).detach()
+                           vs_base=vs_base, lr=1e-3, eval_labels=image_labels).detach()
 
-        torch.save(mask, out_path / 'mask.pt')
+        torch.save(mask, out_path / f'mask_{tag}.pt')
         torch.save(mask_model.state_dict(), out_path / f'mask_model_{tag}.pt')
     else:
-        mask = torch.load(out_path / 'mask.pt')
+        mask = torch.load(out_path / f'mask_{tag}.pt')
         mask_model = encoding_controler.get_controlled_model(
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
         mask_model.load_state_dict(torch.load(
@@ -343,7 +385,7 @@ def main(PRETRAIN=True,
     pretty_print_results(res_test, "test", [psnr, ssim])
     pretty_print_results(res_masked, "test_masked", psnr)
 
-    tag_without_filename = f"{ENCODING_TYPE.value}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}"
+    
     save_results_to_csv(res_train, "train", psnr, out_path, tag_without_filename)
     save_results_to_csv(res_test, "test", [psnr, ssim], out_path, tag_without_filename)
     save_results_to_csv(res_masked, "test_masked", psnr, out_path, tag_without_filename)

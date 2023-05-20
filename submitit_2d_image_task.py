@@ -21,10 +21,13 @@ def parse_args():
     parser.add_argument("--partition", type=str, default="gpu")
     parser.add_argument("--n_runs", type=int, default=1)
     parser.add_argument("--array_parallelism", type=int, default=8)
-    parser.add_argument("--controller_type", type=str, default="GlobalProgression")
+    parser.add_argument("--controller_type", type=str, default="SpatialProgressionStashed")
     parser.add_argument("--n_epochs", type=int, default=1)
     parser.add_argument("--eval", action="store_true", help="Set to evaluation mode")
     parser.add_argument("--non_uniform", action="store_true", help="Set to non uniform sampling")
+    parser.add_argument("--folder_name", type=str, default="natural_images")
+    parser.add_argument("--timeout", type=int, default=20)
+    parser.add_argument("--mask_res", type=int, default=512)
 
     return parser.parse_args()
 
@@ -36,7 +39,7 @@ if __name__ == "__main__":
     controller_type = ControllerType.__members__[args.controller_type]
 
     executor.update_parameters(
-        timeout_min=20,
+        timeout_min=args.timeout,
         gpus_per_node=1,
         cpus_per_task=10,
         nodes=1,
@@ -52,4 +55,4 @@ if __name__ == "__main__":
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-                executor.submit(main, IMAGE_PATH=str(Path("natural_images") / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform)
+                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res)
