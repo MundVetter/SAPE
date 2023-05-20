@@ -33,7 +33,7 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    file_names = get_image_filenames(constants.DATA_ROOT / "natural_images")
+    file_names = get_image_filenames(constants.DATA_ROOT / args.folder_name)
     executor = submitit.AutoExecutor(folder="logs")
 
     controller_type = ControllerType.__members__[args.controller_type]
