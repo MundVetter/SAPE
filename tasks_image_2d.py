@@ -276,7 +276,7 @@ def main(PRETRAIN=True,
          LEARN_MASK=True,
          RETRAIN=True,
          NON_UNIFORM=True,
-         EPOCHS=4000,
+         EPOCHS=1,
          IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.SpatialProgressionStashed,
@@ -364,7 +364,7 @@ def main(PRETRAIN=True,
         # only retrain last layer
         for param in model.parameters():
             param.requires_grad = False
-        for param in model.model.model.model[-3:].parameters():
+        for param in model.model.model.model[-1:].parameters():
             param.requires_grad = True
         model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                           50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4)

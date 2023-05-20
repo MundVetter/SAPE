@@ -23,7 +23,12 @@ def parse_args():
     parser.add_argument("--array_parallelism", type=int, default=8)
     parser.add_argument("--controller_type", type=str, default="SpatialProgressionStashed")
     parser.add_argument("--n_epochs", type=int, default=1)
+
     parser.add_argument("--eval", action="store_true", help="Set to evaluation mode")
+    parser.add_argument("--no_pretrain", action="store_true", help="Set to pretrain mode")
+    parser.add_argument("--no_mask", action="store_true", help="Set to mask mode")
+    parser.add_argument("--no_retrain", action="store_true", help="Set to retrain mode")
+
     parser.add_argument("--non_uniform", action="store_true", help="Set to non uniform sampling")
     parser.add_argument("--folder_name", type=str, default="natural_images")
     parser.add_argument("--timeout", type=int, default=20)
@@ -47,6 +52,9 @@ if __name__ == "__main__":
         slurm_partition=args.partition,
         slurm_array_parallelism=args.array_parallelism
     )
+    pretrain = not args.no_pretrain
+    learn_mask = not args.no_mask
+    retrain = not args.no_retrain
 
     pretrain = not args.eval
     learn_mask = not args.eval
