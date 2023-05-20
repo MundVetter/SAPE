@@ -326,7 +326,7 @@ def main(PRETRAIN=True,
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                          50, verbose=True, eval_labels = image_labels)
         wandb.watch(model)
-        # print(summary(model, input_data=vs_in.to(device)))
+
         torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
     else:
         model = encoding_controler.get_controlled_model(
@@ -345,7 +345,7 @@ def main(PRETRAIN=True,
     if LEARN_MASK:
         mask_model = encoding_controler.get_controlled_model(
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
-        print(summary(mask_model, vs_in.shape))
+
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
                             lambda_cost=0.0007)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
