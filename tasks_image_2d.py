@@ -364,10 +364,12 @@ def main(PRETRAIN=True,
         # only retrain last layer
         for param in model.parameters():
             param.requires_grad = False
-        for param in model.model.model.model[-1:].parameters():
-            param.requires_grad = True
+
+        model.model.model.model[-1].weight.requires_grad = False
+        model.model.model.model[-1].bias.requires_grad = True
+
         model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                          50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4)
+                          50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4, eval_labels = image_labels)
         torch.save(model2.state_dict(), out_path / f'model2_{tag}.pt')
     else:
         model2 = encoding_controler.get_controlled_model(
