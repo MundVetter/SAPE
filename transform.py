@@ -19,6 +19,6 @@ def save_images_from_numpy_array(np_file_path, key, output_dir, file_format='jpg
         imageio.imwrite(output_path, img)
 
 # Example usage
-np_file_path = 'assets/natural_images/data_div2k.npz'
-output_dir = 'assets/natural_images'
-save_images_from_numpy_array(np_file_path, 'test_data', output_dir, file_format='jpg')
+np_file_path = 'assets/validation_natural_images/data_div2k.npz'
+output_dir = 'assets/validation_natural_images'
+save_images_from_numpy_array(np_file_path, 'train_data', output_dir, file_format='jpg')
