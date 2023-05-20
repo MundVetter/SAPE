@@ -13,7 +13,6 @@ from pathlib import Path
 import math
 import csv
 import wandb
-from torchinfo import summary
 
 
 def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, mask_model):
