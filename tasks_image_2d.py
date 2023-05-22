@@ -84,7 +84,7 @@ class MaskModel(nn.Module):
             logger.stash_iter('total_loss', total_loss)
             wandb.log({'mse_train': mse_loss, 'mask_cost': mask_cost, 'total_loss': total_loss})
 
-            if i % 100 == 0 and vs_base is not None:
+            if i % 200 == 0 and vs_base is not None:
                 log_evaluation_progress(self.frozen_model, image, out_path, tag, vs_base, self.device, self, i, labels = eval_labels)
 
             total_loss.backward()
@@ -324,7 +324,7 @@ def main(PRETRAIN=True,
 
     if PRETRAIN:
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                         50, verbose=True, eval_labels = image_labels)
+                         200, verbose=True, eval_labels = image_labels)
         wandb.watch(model)
 
         torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
@@ -370,7 +370,7 @@ def main(PRETRAIN=True,
 
         control_params.num_iterations = 200
         model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                          50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4, eval_labels = image_labels)
+                          200, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4, eval_labels = image_labels)
         torch.save(model2.state_dict(), out_path / f'model2_{tag}.pt')
     else:
         model2 = encoding_controler.get_controlled_model(
