@@ -34,6 +34,8 @@ def parse_args():
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--mask_res", type=int, default=512)
 
+    parser.add_argument("--lambda_cost", type=float, default=0.0007)
+
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -59,4 +61,4 @@ if __name__ == "__main__":
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res)
+                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, LAMBDA_COST=args.lambda_cost)
