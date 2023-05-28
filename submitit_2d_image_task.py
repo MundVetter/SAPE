@@ -5,6 +5,7 @@ import argparse
 import os
 from pathlib import Path
 from custom_types import *
+import uuid
 
 def get_image_filenames(folder_path):
     # List all files in the folder
@@ -59,4 +60,4 @@ if __name__ == "__main__":
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res)
+                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, RUN_NAME=str(uuid.uuid4())[:8])
