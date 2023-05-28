@@ -57,6 +57,7 @@ class MaskModel(nn.Module):
     def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, eval_labels = None):
         wandb.config.update({'num_iterations': num_iterations, 'lr': lr, 'lambda_cost': self.lambda_cost})
         optimizer = Optimizer(self.parameters(), lr=lr, weight_decay=1e-5)
+        # optimzer = Optimizer(self.mask_model.parameters(), lr=lr)
         # Freeze the parameters of the frozen model
         # for param in self.frozen_model.parameters():
             # param.requires_grad = False
@@ -296,7 +297,7 @@ def main(PRETRAIN=True,
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
          MASK_RES = 512,
-         LAMBDA_COST = 0.0007,
+         LAMBDA_COST = 0.01,
          RUN_NAME=None) -> int:
 
     if constants.DEBUG:
