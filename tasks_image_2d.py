@@ -153,6 +153,8 @@ def optimize(encoding_type: EncodingType, model_params,
         else:
             out = model(vs_in, override_mask=mask)
         loss_all = nnf.mse_loss(out, labels, reduction='none')
+        if not model_provided:
+            model.stash_iteration(loss_all.mean(-1))
         loss_all[:, 0] *= inv_prob
         loss_all[:, 1] *= inv_prob
         loss_all[:, 2] *= inv_prob
@@ -161,8 +163,6 @@ def optimize(encoding_type: EncodingType, model_params,
             print(loss)
         loss.backward()
         opt.step()
-        if not model_provided:
-            model.stash_iteration(loss_all.mean(-1))
         logger.stash_iter('mse_train', loss)
         wandb.log({'mse_train': loss})
 
