@@ -296,6 +296,7 @@ def main(PRETRAIN=True,
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
          MASK_RES = 512,
+         LAMBDA_COST = 0.0007,
          RUN_NAME=None) -> int:
 
     if constants.DEBUG:
@@ -363,7 +364,7 @@ def main(PRETRAIN=True,
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
 
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
-                            lambda_cost=0.0007)
+                            lambda_cost=LAMBDA_COST)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base, lr=1e-3, eval_labels=image_labels).detach()
 
