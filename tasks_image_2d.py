@@ -56,7 +56,8 @@ class MaskModel(nn.Module):
 
     def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, eval_labels = None):
         wandb.config.update({'num_iterations': num_iterations, 'lr': lr, 'lambda_cost': self.lambda_cost})
-        optimizer = Optimizer(self.parameters(), lr=lr, weight_decay=1e-5)
+        optimizer1 = OptimizerW(self.parameters(), lr=lr, weight_decay=1.)
+        # optimizer2 = Optimizer(self.mask_model.parameters(), lr=lr)
         # optimzer = Optimizer(self.mask_model.parameters(), lr=lr)
         # Freeze the parameters of the frozen model
         # for param in self.frozen_model.parameters():
@@ -65,8 +66,10 @@ class MaskModel(nn.Module):
         logger = train_utils.Logger().start(num_iterations)
         vs_in, labels = vs_in.to(self.device), labels.to(self.device)
         for i in range(num_iterations):
-            optimizer.zero_grad()
+            # optimizer.zero_grad()
             # self.optimizer2.zero_grad()
+            optimizer1.zero_grad()
+            # optimizer2.zero_grad()
 
             mask_original, mask = self.forward(vs_in)
             frozen_model_output = self.frozen_model(vs_in, override_mask=mask)
@@ -79,7 +82,11 @@ class MaskModel(nn.Module):
             # Multiply the mask with the weight tensor before calculating the cost
             weighted_mask = torch.abs(mask_original) * self.weight_tensor
             weighted_mask = weighted_mask.mean(1) * self.inv_prob
-            mask_cost = self.lambda_cost * weighted_mask.mean()
+
+            # lower lambda cost linearly over time to 0.01
+            lambda_cost = max(0.00, self.lambda_cost - (self.lambda_cost / (num_iterations // 2)) * i)
+
+            mask_cost = lambda_cost * weighted_mask.mean()
             total_loss = mse_loss + mask_cost
             logger.stash_iter('mse_train', mse_loss)
             logger.stash_iter('mask_cost', mask_cost)
@@ -92,7 +99,8 @@ class MaskModel(nn.Module):
 
 
             total_loss.backward()
-            optimizer.step()
+            optimizer1.step()
+            # optimizer2.step()
             # self.optimizer2.step()
             logger.reset_iter()
         logger.stop()
@@ -292,12 +300,12 @@ def main(PRETRAIN=True,
          LEARN_MASK=True,
          RETRAIN=True,
          NON_UNIFORM=True,
-         EPOCHS=4000,
+         EPOCHS=8000,
          IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
          MASK_RES = 512,
-         LAMBDA_COST = 0.01,
+         LAMBDA_COST = 0.25,
          RUN_NAME=None) -> int:
 
     if constants.DEBUG:
@@ -354,8 +362,8 @@ def main(PRETRAIN=True,
 
     model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
-                                                    hidden_dim=256, std=5., num_layers=3)
-    weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5
+                                                    hidden_dim=256, std=2., num_layers=3)
+    weight_tensor = (model.model.encode.frequencies**2).sum(0)
     # weight_tensor = mean_of_groups(weight_tensor, 32).to(device)
     control_params_2 = encoding_controler.ControlParams(
         num_iterations=1000, epsilon=1e-5)
@@ -377,7 +385,7 @@ def main(PRETRAIN=True,
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
         mask_model.load_state_dict(torch.load(
             out_path / f'mask_model_{tag}.pt'))
-        optMask = MaskModel(mask_model, model, weight_tensor, prob, lambda_cost=0.16)
+        optMask = MaskModel(mask_model, model, weight_tensor, prob, lambda_cost=0.1)
 
     if RETRAIN:
         # only retrain last layer
