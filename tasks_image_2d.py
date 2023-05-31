@@ -303,7 +303,7 @@ def main(PRETRAIN=True,
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
          MASK_RES = 512,
-         LAMBDA_COST = 0.16,
+         LAMBDA_COST = 0.1,
          RUN_NAME=None) -> int:
 
     if constants.DEBUG:
@@ -337,7 +337,7 @@ def main(PRETRAIN=True,
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
-                                               hidden_dim=256, std=20., num_layers=3)
+                                               hidden_dim=256, std=20., num_layers=2)
     control_params = encoding_controler.ControlParams(
         num_iterations=1, epsilon=1e-3, res=MASK_RES)
 
