@@ -336,7 +336,7 @@ def main(PRETRAIN=True,
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                                hidden_dim=256, std=20., num_layers=2)
     control_params = encoding_controler.ControlParams(
-        num_iterations=1, epsilon=1e-3, res=MASK_RES)
+        num_iterations=4000, epsilon=1e-3, res=MASK_RES)
 
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}"
     tag = f"{name}_{tag_without_filename}"
