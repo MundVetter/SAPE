@@ -103,9 +103,6 @@ class MaskModel(nn.Module):
             logger.reset_iter()
         logger.stop()
 
-        # unfreeze the parameters of the frozen model
-        # for param in self.frozen_model.parameters():
-            # param.requires_grad = True
         return mask
 
     def forward(self, vs_in):
@@ -297,7 +294,7 @@ def mean_abs_weights(model):
 def main(PRETRAIN=True,
          LEARN_MASK=True,
          RETRAIN=True,
-         NON_UNIFORM=True,
+         NON_UNIFORM=False,
          EPOCHS=8000,
          IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,

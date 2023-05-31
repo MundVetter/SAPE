@@ -142,12 +142,12 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
         # Calculate probability for non-uniform sampling
         prob = torch.from_numpy(weight_map.reshape(-1)[select])
     else:
-        select = torch.rand(h * w).argsort()
-        masked = select[split:]
-        select = select[:split]
+        indices = torch.arange(0, h * w)
+        select = indices[indices % 2 == 0]
+        masked = indices[indices % 2 == 1]
 
         # Calculate probability for uniform sampling
-        prob = torch.from_numpy(np.full(split, 1 / (h * w)))
+        prob = torch.ones((1))
 
     sample_cords = coords[select]
     sample_labels = labels[select]
