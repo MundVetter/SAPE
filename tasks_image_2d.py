@@ -359,7 +359,7 @@ def main(PRETRAIN=True,
     model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
                                                     hidden_dim=256, std=5., num_layers=3)
-    weight_tensor = (model.model.encode.frequencies**2).sum(0) - THRESHOLD
+    weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5 - THRESHOLD
   
     control_params_2 = encoding_controler.ControlParams(
         num_iterations=1000, epsilon=1e-5)
