@@ -300,8 +300,9 @@ def main(PRETRAIN=True,
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
          MASK_RES = 512,
-         LAMBDA_COST = 0.1,
-         RUN_NAME=None) -> int:
+         LAMBDA_COST = 1 - 1e-3,
+         RUN_NAME=None,
+         THRESHOLD = 1) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -358,7 +359,7 @@ def main(PRETRAIN=True,
     model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
                                                     hidden_dim=256, std=5., num_layers=3)
-    weight_tensor = torch.threshold((model.model.encode.frequencies**2).sum(0), 1, 0)
+    weight_tensor = (model.model.encode.frequencies**2).sum(0) - THRESHOLD
   
     control_params_2 = encoding_controler.ControlParams(
         num_iterations=1000, epsilon=1e-5)
