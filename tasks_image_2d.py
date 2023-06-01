@@ -318,7 +318,8 @@ def main(PRETRAIN=True,
                 "image_path": IMAGE_PATH,
                 "encoding_type": ENCODING_TYPE,
                 "controller_type": CONTROLLER_TYPE,
-                "mask res": MASK_RES
+                "mask res": MASK_RES,
+                "threshold": THRESHOLD
             })
         wandb.run.log_code(".")
 
