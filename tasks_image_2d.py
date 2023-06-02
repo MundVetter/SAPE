@@ -108,12 +108,10 @@ class MaskModel(nn.Module):
     def forward(self, vs_in):
         mask_original = self.mask_act(self.mask_model(vs_in))
         # check if model is progressive
-        if self.frozen_model.is_progressive:
-            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
-            ones = torch.ones_like(vs_in, device=vs_in.device)
-            mask = torch.cat([ones, mask], dim=-1)
-        else:
-            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim)
+        mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
+        rest = self.frozen_model.model.model.model[0].in_features - len(self.weight_tensor) * 2
+        ones = torch.ones((vs_in.shape[0], rest), device=vs_in.device)
+        mask = torch.cat([ones, mask], dim=-1)
         return mask_original, mask
     
 def log_evaluation_progress(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0, labels = None):
@@ -358,10 +356,16 @@ def main(PRETRAIN=True,
         model.load_state_dict(torch.load(out_path / f'model_{tag}.pt'))
 
     model_copy = copy.deepcopy(model)
-    mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
-                                                    hidden_dim=256, std=5., num_layers=3)
-    weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5 - THRESHOLD
+    weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5
+    # get the number of tensor above threshold
+    num_above_threshold = (weight_tensor > THRESHOLD).sum()
   
+    mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=num_above_threshold, num_frequencies=256,
+                                                    hidden_dim=256, std=5., num_layers=3)
+    
+    # remove frequencies below threshold from the weight tensor
+    weight_tensor = weight_tensor[weight_tensor > THRESHOLD]
+
     control_params_2 = encoding_controler.ControlParams(
         num_iterations=1000, epsilon=1e-5)
 
