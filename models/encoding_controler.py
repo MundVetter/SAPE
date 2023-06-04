@@ -606,10 +606,8 @@ def get_controlled_model(model_params: encoding_models.ModelParams, encoding_typ
     if control_type is ControllerType.NoControl:
         return NoControl(model_params, encoding_type, control_params)
     elif control_type is ControllerType.GlobalProgression:
-        model_params.use_id_encoding = True
         return GlobalProgressionControllerEarly(model_params, encoding_type, control_params)
     elif control_type is ControllerType.SpatialProgressionStashed:
-        model_params.use_id_encoding = True
         return SpatialControllerStashed(model_params, encoding_type, control_params)
     else:
         raise ValueError(f"{encoding_type.value} is not supported")
