@@ -108,12 +108,12 @@ class MaskModel(nn.Module):
     def forward(self, vs_in):
         mask_original = self.mask_act(self.mask_model(vs_in))
         # check if model is progressive
-        # if self.frozen_model.is_progressive:
-        #     mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
-        #     ones = torch.ones_like(vs_in, device=vs_in.device)
-        #     mask = torch.cat([ones, mask], dim=-1)
-        # else:
-        mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim)
+        if self.frozen_model.is_progressive:
+            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
+            ones = torch.ones_like(vs_in, device=vs_in.device)
+            mask = torch.cat([ones, mask], dim=-1)
+        else:
+            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim)
         return mask_original, mask
     
 def log_evaluation_progress(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0, labels = None):
@@ -358,11 +358,9 @@ def main(PRETRAIN=True,
         model.load_state_dict(torch.load(out_path / f'model_{tag}.pt'))
 
     model_copy = copy.deepcopy(model)
-    mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=257, num_frequencies=256,
+    mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
                                                     hidden_dim=256, std=5., num_layers=3, use_id_encoding=True)
     weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5 - THRESHOLD
-    # add weight of -1 add the start of the weight tensor
-    weight_tensor = torch.cat([torch.tensor([math.sqrt(0.25**2 + 0.25**2) - 1]).to(device), weight_tensor])
   
     control_params_2 = encoding_controler.ControlParams(
         num_iterations=1000, epsilon=1e-5)
