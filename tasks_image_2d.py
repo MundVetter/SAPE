@@ -84,7 +84,8 @@ class MaskModel(nn.Module):
             weighted_mask = weighted_mask.mean(1) * self.inv_prob
             # lambda_cost = max(self.lambda_cost, 1 - (1 / (num_iterations // 4)) * i)
 
-            mask_cost = torch.threshold(self.lambda_cost * weighted_mask.mean(), -0.005, -0.005)
+            mask_cost = self.lambda_cost * weighted_mask.mean()
+            # mask_cost = torch.threshold(self.lambda_cost * weighted_mask.mean(), -0.005, -0.005)
             total_loss = mse_loss + mask_cost
             logger.stash_iter('mse_train', mse_loss)
             logger.stash_iter('mask_cost', mask_cost)
@@ -300,7 +301,7 @@ def main(PRETRAIN=True,
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
          MASK_RES = 512,
-         LAMBDA_COST = 0.1,
+         LAMBDA_COST = 0.05,
          RUN_NAME=None,
          THRESHOLD = 1) -> int:
 
@@ -360,7 +361,7 @@ def main(PRETRAIN=True,
     model_copy = copy.deepcopy(model)
     mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
                                                     hidden_dim=256, std=5., num_layers=3, use_id_encoding=True)
-    weight_tensor = torch.log((model.model.encode.frequencies**2).sum(0)**0.5 + 1) - 1
+    weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5 - THRESHOLD
   
     control_params_2 = encoding_controler.ControlParams(
         num_iterations=1000, epsilon=1e-5)
@@ -370,7 +371,7 @@ def main(PRETRAIN=True,
             mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
 
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
-                            lambda_cost=LAMBDA_COST)
+                            lambda_cost=LAMBDA_COST, mask_act=torch.erf)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base, lr=1e-3, eval_labels=image_labels).detach()
 
