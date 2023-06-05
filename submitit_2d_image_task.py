@@ -2,20 +2,11 @@ import submitit
 from tasks_image_2d import main
 import constants
 import argparse
-import os
 from pathlib import Path
 from custom_types import *
 import uuid
 
-def get_image_filenames(folder_path):
-    # List all files in the folder
-    file_list = os.listdir(folder_path)
-
-    # Filter the file list to include only images with common extensions
-    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.gif']
-    image_filenames = [file for file in file_list if any(file.lower().endswith(ext) for ext in image_extensions)]
-
-    return image_filenames
+from utils.image_utils import get_image_filenames
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -24,11 +15,6 @@ def parse_args():
     parser.add_argument("--array_parallelism", type=int, default=8)
     parser.add_argument("--controller_type", type=str, default="SpatialProgressionStashed")
     parser.add_argument("--n_epochs", type=int, default=1)
-
-    parser.add_argument("--eval", action="store_true", help="Set to evaluation mode")
-    parser.add_argument("--no_pretrain", action="store_true", help="Set to pretrain mode")
-    parser.add_argument("--no_mask", action="store_true", help="Set to mask mode")
-    parser.add_argument("--no_retrain", action="store_true", help="Set to retrain mode")
 
     parser.add_argument("--non_uniform", action="store_true", help="Set to non uniform sampling")
     parser.add_argument("--folder_name", type=str, default="natural_images")
@@ -56,12 +42,10 @@ if __name__ == "__main__":
         slurm_partition=args.partition,
         slurm_array_parallelism=args.array_parallelism
     )
-    pretrain = not args.no_pretrain and not args.eval
-    learn_mask = not args.no_mask and not args.eval
-    retrain = not args.no_retrain and not args.eval
 
     group_name = str(uuid.uuid4())[:8]
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, LAMBDA_COST=args.lambda_cost, RUN_NAME=group_name, THRESHOLD=args.threshold)
+                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, LAMBDA_COST=args.lambda_cost, RUN_NAME=group_name, THRESHOLD=args.threshold)
+

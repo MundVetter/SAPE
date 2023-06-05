@@ -19,6 +19,7 @@ import wandb
 def optimize(encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controler.ControlParams, group, tag, out_path, device: D,
              freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None):
+    # TODO: change to original SAPE
     vs_base, vs_in, labels, target_image, image_labels, _, prob = group
     model_provided = True
     if model is None:
@@ -63,10 +64,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return model
 
-def main(PRETRAIN=True,
-         LEARN_MASK=True,
-         RETRAIN=True,
-         NON_UNIFORM=True,
+def main(NON_UNIFORM=True,
          EPOCHS=8000,
          IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
@@ -84,9 +82,6 @@ def main(PRETRAIN=True,
         wandb.init(project="2d_image",
                    group=RUN_NAME,
             config={
-                "pretrain": PRETRAIN,
-                "learn_mask": LEARN_MASK,
-                "retrain": RETRAIN,
                 "non_uniform": NON_UNIFORM,
                 "epochs": EPOCHS,
                 "image_path": IMAGE_PATH,
