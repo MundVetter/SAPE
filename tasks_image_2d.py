@@ -84,7 +84,7 @@ class MaskModel(nn.Module):
             weighted_mask = weighted_mask.mean(1) * self.inv_prob
             # lambda_cost = max(self.lambda_cost, 1 - (1 / (num_iterations // 4)) * i)
 
-            mask_cost = torch.threshold(self.lambda_cost * weighted_mask.mean(), -0.03, -0.03)
+            mask_cost = nnf.elu(self.lambda_cost * weighted_mask.mean(), 0.05) + 0.05
             total_loss = mse_loss + mask_cost
             logger.stash_iter('mse_train', mse_loss)
             logger.stash_iter('mask_cost', mask_cost)
