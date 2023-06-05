@@ -1,10 +1,11 @@
+import wandb
 import constants
 import scipy.ndimage
 from matplotlib import pyplot as plt
 from PIL import Image
 from custom_types import *
-from custom_types import T, ARRAY
-from utils import files_utils
+from custom_types import T, ARRAY, nnf, torch
+from utils import files_utils, image_utils
 import imageio
 import os
 import pathlib
@@ -190,3 +191,87 @@ def init_source_target(path: Union[ARRAY, str], name: str, max_res: int, scale: 
     labels, samples, vs_base, masked_cords, mask_labels, masked_image, prob = cache
     image_labels = torch.from_numpy(image).reshape(-1, c).float() / 255
     return vs_base, samples, labels, image, image_labels, (masked_cords, mask_labels, masked_image), prob
+
+
+def psnr(img1, img2, **_):
+    mse = torch.mean((img1 - img2) ** 2)
+    return 20 * torch.log10(1.0 / torch.sqrt(mse))
+
+
+def plot_image(model, vs_in: T, ref_image: ARRAY, mask_model):
+    model.eval()
+    with torch.no_grad():
+        if model.is_progressive or mask_model is not None:
+            if mask_model is not None:
+                _, mask = mask_model(vs_in)
+                out = model(vs_in, override_mask=mask)
+            else:
+                out, mask = model(vs_in, get_mask=True)
+            if mask.dim() != out.dim():
+                mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
+            hm = torch.abs(mask[:, 2:]).sum(1) / torch.abs(mask[:, 2:]).sum(1).max()
+            hm = image_utils.to_heatmap(hm)
+            hm = hm.view(*ref_image.shape[:-1], 3)
+        else:
+            out = model(vs_in, get_mask=True)
+            hm = None
+        out = out.view(ref_image.shape)
+    model.train()
+
+    return out, hm
+
+
+def log_evaluation_progress(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0, labels = None):
+    with torch.no_grad():
+        extra = 'mask' if mask_model is not None else 'no_mask'
+        out, hm = plot_image(
+                    model, vs_base.to(device), image, mask_model)
+        if labels is not None:
+            wandb.log({'psnr eval': psnr(out.view(labels.shape), labels.to(device))})
+        files_utils.export_image(
+                    out, out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png')
+        wandb.log({'image': wandb.Image(str(out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png'))})
+        if hm is not None:
+            files_utils.export_image(
+                        hm, out_path / f'heatmap_{tag}_{extra}' / f'{i:04d}.png')
+            wandb.log({f'heatmap': wandb.Image(str(out_path / f'heatmap_{tag}_{extra}' / f'{i:04d}.png'))})
+
+
+def rgb_to_grayscale(img):
+    # The weights correspond to the conversion formula: 
+    # Y = 0.2989 * R + 0.5870 * G + 0.1140 * B
+    weights = torch.tensor([0.2989, 0.5870, 0.1140]).view(1, -1, 1, 1).to(img.device)
+    return (img * weights).sum(dim=1, keepdim=True)
+
+
+def ssim(img1, img2, img_shape=None, window_size=11, k1=0.01, k2=0.03, L=1.0, **_):
+    C1 = (k1 * L) ** 2
+    C2 = (k2 * L) ** 2
+    window = torch.ones((1, 1, window_size, window_size)) / (window_size ** 2)
+
+    img1 = img1.view(1, img1.shape[1], img_shape[0], -1)
+    img2 = img2.view(1, img2.shape[1], img_shape[0], -1)
+
+    img1_gray = rgb_to_grayscale(img1)
+    img2_gray = rgb_to_grayscale(img2)
+
+    window = window.to(img1_gray.device)
+
+    mu1 = nnf.conv2d(img1_gray, window, padding=window_size // 2, groups=1)
+    mu2 = nnf.conv2d(img2_gray, window, padding=window_size // 2, groups=1)
+
+    mu1_sq = mu1.pow(2)
+    mu2_sq = mu2.pow(2)
+    mu1_mu2 = mu1 * mu2
+
+    sigma1_sq = nnf.conv2d(img1_gray * img1_gray, window, padding=window_size // 2, groups=1) - mu1_sq
+    sigma2_sq = nnf.conv2d(img2_gray * img2_gray, window, padding=window_size // 2, groups=1) - mu2_sq
+    sigma12 = nnf.conv2d(img1_gray * img2_gray, window, padding=window_size // 2, groups=1) - mu1_mu2
+
+    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+
+    return torch.mean(ssim_map)
+
+
+
+

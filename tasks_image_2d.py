@@ -1,136 +1,19 @@
 import os
+from models.encoding_models import MaskModel, evaluate
+from utils.files_utils import pretty_print_results, save_results_to_csv
+from utils.image_utils import log_evaluation_progress, psnr, ssim
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK']='1'
 
 from utils.image_utils import init_source_target
 from custom_types import *
 from models import encoding_controler, encoding_models
-from utils import files_utils, train_utils, image_utils
+from utils import files_utils, train_utils
 import constants
 import copy
 import matplotlib.pyplot as plt
 import os
 from pathlib import Path
-import math
-import csv
 import wandb
-from datetime import datetime
-
-
-def plot_image(model: encoding_controler.EncodedController, vs_in: T, ref_image: ARRAY, mask_model):
-    model.eval()
-    with torch.no_grad():
-        if model.is_progressive or mask_model is not None:
-            if mask_model is not None:
-                _, mask = mask_model(vs_in)
-                out = model(vs_in, override_mask=mask)
-            else:
-                out, mask = model(vs_in, get_mask=True)
-            if mask.dim() != out.dim():
-                mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
-            hm = torch.abs(mask[:, 2:]).sum(1) / torch.abs(mask[:, 2:]).sum(1).max()
-            hm = image_utils.to_heatmap(hm)
-            hm = hm.view(*ref_image.shape[:-1], 3)
-        else:
-            out = model(vs_in, get_mask=True)
-            hm = None
-        out = out.view(ref_image.shape)
-    model.train()
-
-    return out, hm
-
-
-class MaskModel(nn.Module):
-    def __init__(self, mask_model, frozen_model, weight_tensor, prob, lambda_cost=0.01, mask_act = lambda x: x):
-        super().__init__()
-        self.mask_model = mask_model
-        self.frozen_model = frozen_model
-        self.mask_act = mask_act
-        
-        self.lambda_cost = lambda_cost
-        self.encoding_dim = frozen_model.encoding_dim
-        self.weight_tensor = weight_tensor
-        self.device = next(self.mask_model.parameters()).device
-        inv_prob = (1. / prob).float().to(self.device)
-        inv_prob = inv_prob / inv_prob.mean()
-        self.inv_prob = inv_prob
-
-    def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, eval_labels = None):
-        wandb.config.update({'num_iterations': num_iterations, 'lr': lr, 'lambda_cost': self.lambda_cost})
-        optimizer1 = OptimizerW(self.parameters(), lr=lr, weight_decay=1)
-        # optimizer2 = Optimizer(self.mask_model.parameters(), lr=lr)
-        # optimzer = Optimizer(self.mask_model.parameters(), lr=lr)
-        # Freeze the parameters of the frozen model
-        # for param in self.frozen_model.parameters():
-            # param.requires_grad = False
-
-        logger = train_utils.Logger().start(num_iterations)
-        vs_in, labels = vs_in.to(self.device), labels.to(self.device)
-        for i in range(num_iterations):
-            # optimizer.zero_grad()
-            # self.optimizer2.zero_grad()
-            optimizer1.zero_grad()
-            # optimizer2.zero_grad()
-
-            mask_original, mask = self.forward(vs_in)
-            frozen_model_output = self.frozen_model(vs_in, override_mask=mask)
-
-            mse_loss = nnf.mse_loss(
-                frozen_model_output, labels, reduction='none')
-            mse_loss = mse_loss.mean(1) * self.inv_prob
-            mse_loss = mse_loss.mean()
-
-            # Multiply the mask with the weight tensor before calculating the cost
-            weighted_mask = torch.abs(mask_original) * self.weight_tensor
-            weighted_mask = weighted_mask.mean(1) * self.inv_prob
-            # lambda_cost = max(self.lambda_cost, 1 - (1 / (num_iterations // 4)) * i)
-
-            mask_cost = self.lambda_cost * weighted_mask.mean()
-            # mask_cost = torch.threshold(self.lambda_cost * weighted_mask.mean(), -0.005, -0.005)
-            total_loss = mse_loss + mask_cost
-            logger.stash_iter('mse_train', mse_loss)
-            logger.stash_iter('mask_cost', mask_cost)
-            logger.stash_iter('total_loss', total_loss)
-            wandb.log({'mse_train': mse_loss, 'mask_cost': mask_cost, 'total_loss': total_loss})
-
-            if i % 100 == 0 and vs_base is not None:
-                log_evaluation_progress(self.frozen_model, image, out_path, tag, vs_base, self.device, self, i, labels = eval_labels)
-                wandb.log({'main model weights size': mean_abs_weights(self.frozen_model), 'mask model weights size': mean_abs_weights(self.mask_model)})
-
-
-            total_loss.backward()
-            optimizer1.step()
-            # optimizer2.step()
-            # self.optimizer2.step()
-            logger.reset_iter()
-        logger.stop()
-
-        return mask
-
-    def forward(self, vs_in):
-        mask_original = self.mask_act(self.mask_model(vs_in))
-        # check if model is progressive
-        if self.frozen_model.is_progressive:
-            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim - 2)
-            ones = torch.ones_like(vs_in, device=vs_in.device)
-            mask = torch.cat([ones, mask], dim=-1)
-        else:
-            mask = torch.stack([mask_original, mask_original], dim=2).view(-1, self.encoding_dim)
-        return mask_original, mask
-    
-def log_evaluation_progress(model, image, out_path, tag, vs_base, device, mask_model=None, i = 0, labels = None):
-    with torch.no_grad():
-        extra = 'mask' if mask_model is not None else 'no_mask'
-        out, hm = plot_image(
-                    model, vs_base.to(device), image, mask_model)
-        if labels is not None:
-            wandb.log({'psnr eval': psnr(out.view(labels.shape), labels.to(device))})
-        files_utils.export_image(
-                    out, out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png')
-        wandb.log({'image': wandb.Image(str(out_path / f'opt_{tag}_{extra}' / f'{i:04d}.png'))})
-        if hm is not None:
-            files_utils.export_image(
-                        hm, out_path / f'heatmap_{tag}_{extra}' / f'{i:04d}.png')
-            wandb.log({f'heatmap': wandb.Image(str(out_path / f'heatmap_{tag}_{extra}' / f'{i:04d}.png'))})
 
 
 def optimize(encoding_type: EncodingType, model_params,
@@ -180,68 +63,6 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return model
 
-def psnr(img1, img2, **_):
-    mse = torch.mean((img1 - img2) ** 2)
-    return 20 * torch.log10(1.0 / torch.sqrt(mse))
-
-def rgb_to_grayscale(img):
-    # The weights correspond to the conversion formula: 
-    # Y = 0.2989 * R + 0.5870 * G + 0.1140 * B
-    weights = torch.tensor([0.2989, 0.5870, 0.1140]).view(1, -1, 1, 1).to(img.device)
-    return (img * weights).sum(dim=1, keepdim=True)
-
-def ssim(img1, img2, img_shape=None, window_size=11, k1=0.01, k2=0.03, L=1.0, **_):
-    C1 = (k1 * L) ** 2
-    C2 = (k2 * L) ** 2
-    window = torch.ones((1, 1, window_size, window_size)) / (window_size ** 2)
-    
-    img1 = img1.view(1, img1.shape[1], img_shape[0], -1)
-    img2 = img2.view(1, img2.shape[1], img_shape[0], -1)
-
-    img1_gray = rgb_to_grayscale(img1)
-    img2_gray = rgb_to_grayscale(img2)
-
-    window = window.to(img1_gray.device)
-
-    mu1 = nnf.conv2d(img1_gray, window, padding=window_size // 2, groups=1)
-    mu2 = nnf.conv2d(img2_gray, window, padding=window_size // 2, groups=1)
-
-    mu1_sq = mu1.pow(2)
-    mu2_sq = mu2.pow(2)
-    mu1_mu2 = mu1 * mu2
-
-    sigma1_sq = nnf.conv2d(img1_gray * img1_gray, window, padding=window_size // 2, groups=1) - mu1_sq
-    sigma2_sq = nnf.conv2d(img2_gray * img2_gray, window, padding=window_size // 2, groups=1) - mu2_sq
-    sigma12 = nnf.conv2d(img1_gray * img2_gray, window, padding=window_size // 2, groups=1) - mu1_mu2
-
-    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
-
-    return torch.mean(ssim_map)
-
-
-def evaluate(model, vs_in, labels, funcs = [], mask=None, **kwargs):
-    model.eval()
-    with torch.no_grad():
-        if type(funcs) is list:
-            out = model(vs_in, override_mask=mask)
-            return [func(out, labels, **kwargs) for func in funcs]
-        else:
-            out =  model(vs_in, override_mask=mask)
-            return funcs(out, labels, **kwargs)
-
-def mean_of_groups(tensor, num_groups):
-    group_size = len(tensor) // num_groups
-    if group_size == 0:
-        raise ValueError("The number of groups should be less than or equal to the tensor length.")
-
-    output = torch.zeros(num_groups)
-    for i in range(num_groups):
-        start = i * group_size
-        end = start + group_size
-        output[i] = tensor[start:end].mean()
-
-    return output
-
 def evaluate_configurations(model, model2, mask_model, vs_in, labels, funcs, device, name="", **kwargs):
     results = {}
     vs_in = vs_in.to(device)
@@ -252,46 +73,6 @@ def evaluate_configurations(model, model2, mask_model, vs_in, labels, funcs, dev
     results[f"{name}_model2_mask"] = evaluate(model2, vs_in, labels, funcs, mask=mask, **kwargs)
     return results
 
-def pretty_print_results(results, name, funcs):
-    print("=====================================")
-    print(f"Results for {name}")
-    if type(funcs) is not list:
-        for key, value in results.items():
-            print(f"{key} [{funcs.__name__}]: {value}")
-    else:
-        for key, value in results.items():
-            for i, func in enumerate(funcs):
-                print(f"{key} [{func.__name__}]: {value[i]}")
-    print("=====================================")
-
-
-def save_results_to_csv(results, name, funcs, path, tag):
-    file_name = path / f"{name}-{tag}-results.csv"
-    
-    with open(file_name, mode='w', newline='') as csv_file:
-        fieldnames = ['configuration', 'function', 'value']
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-
-        writer.writeheader()
-        for key, value in results.items():
-            if type(funcs) is not list:
-                writer.writerow({'configuration': key, 'function': funcs.__name__, 'value': float(value)})
-            else:
-                for i, func in enumerate(funcs):
-                    writer.writerow({'configuration': key, 'function': func.__name__, 'value': float(value[i])})
-
-def mean_abs_weights(model):
-    total_sum = 0.0
-    total_num = 0
-    
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            total_sum += torch.abs(param.data).sum().item()
-            total_num += param.numel()
-
-    mean_val = total_sum / total_num if total_num > 0 else 0
-    return mean_val
-
 def main(PRETRAIN=True,
          LEARN_MASK=True,
          RETRAIN=True,
@@ -301,8 +82,10 @@ def main(PRETRAIN=True,
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
          MASK_RES = 512,
-         LAMBDA_COST = 0.05,
+         LAMBDA_COST = 0.1,
+         WEIGHT_DECAY = 1,
          RUN_NAME=None,
+         LR = 1e-3,
          THRESHOLD = 1) -> int:
 
     if constants.DEBUG:
@@ -320,7 +103,9 @@ def main(PRETRAIN=True,
                 "encoding_type": ENCODING_TYPE,
                 "controller_type": CONTROLLER_TYPE,
                 "mask res": MASK_RES,
-                "threshold": THRESHOLD
+                "threshold": THRESHOLD,
+                "weight decay": WEIGHT_DECAY,
+                "lr": LR,
             })
         wandb.run.log_code(".")
 
@@ -373,7 +158,7 @@ def main(PRETRAIN=True,
         optMask = MaskModel(mask_model, model, weight_tensor, prob,
                             lambda_cost=LAMBDA_COST, mask_act=torch.erf)
         mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
-                           vs_base=vs_base, lr=1e-3, eval_labels=image_labels).detach()
+                           vs_base=vs_base, lr=LR, weight_decay = WEIGHT_DECAY,eval_labels=image_labels, log = log_evaluation_progress).detach()
 
         torch.save(mask, out_path / f'mask_{tag}.pt')
         torch.save(mask_model.state_dict(), out_path / f'mask_model_{tag}.pt')

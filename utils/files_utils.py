@@ -1,3 +1,4 @@
+import csv
 import os
 import sys
 import constants as const
@@ -406,3 +407,33 @@ def measure_time(func, num_iters: int, *args):
     total_time = time.time() - start_time
     avg_time = total_time / num_iters
     print(f"{str(func).split()[1].split('.')[-1]} total time: {total_time}, average time: {avg_time}")
+
+
+def pretty_print_results(results, name, funcs):
+    print("=====================================")
+    print(f"Results for {name}")
+    if type(funcs) is not list:
+        for key, value in results.items():
+            print(f"{key} [{funcs.__name__}]: {value}")
+    else:
+        for key, value in results.items():
+            for i, func in enumerate(funcs):
+                print(f"{key} [{func.__name__}]: {value[i]}")
+    print("=====================================")
+
+
+def save_results_to_csv(results, name, funcs, path, tag):
+    file_name = path / f"{name}-{tag}-results.csv"
+
+    with open(file_name, mode='w', newline='') as csv_file:
+        fieldnames = ['configuration', 'function', 'value']
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+
+        writer.writeheader()
+        for key, value in results.items():
+            if type(funcs) is not list:
+                writer.writerow({'configuration': key, 'function': funcs.__name__, 'value': float(value)})
+            else:
+                for i, func in enumerate(funcs):
+                    writer.writerow({'configuration': key, 'function': func.__name__, 'value': float(value[i])})
+

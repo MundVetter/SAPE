@@ -1,5 +1,9 @@
+import wandb
 from custom_types import *
 import abc
+
+from custom_types import OptimizerW, nn, nnf, torch
+from utils import train_utils
 
 
 class ModelParams:
@@ -287,3 +291,91 @@ def get_model(params: ModelParams, model_type: EncodingType) -> EncodedMlpModel:
     else:
         raise ValueError(f"{model_type.value} is not supported")
     return model
+
+
+def mean_abs_weights(model):
+    total_sum = 0.0
+    total_num = 0
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            total_sum += torch.abs(param.data).sum().item()
+            total_num += param.numel()
+
+    mean_val = total_sum / total_num if total_num > 0 else 0
+    return mean_val
+
+
+class MaskModel(nn.Module):
+    def __init__(self, mask_model, cmlp, weight_tensor, prob = 1, lambda_cost=0.01, mask_act = lambda x: x):
+        super().__init__()
+        self.mask = mask_model
+        self.cmlp = cmlp
+        self.mask_act = mask_act
+
+        self.lambda_cost = lambda_cost
+        self.encoding_dim = cmlp.encoding_dim
+        self.weight_tensor = weight_tensor
+        self.device = next(self.mask.parameters()).device
+        inv_prob = (1. / prob).float().to(self.device)
+        inv_prob = inv_prob / inv_prob.mean()
+        self.inv_prob = inv_prob
+
+    def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, weight_decay = 1, eval_labels = None, log = lambda *args, **kwargs: None):
+        wandb.config.update({'num_iterations': num_iterations, 'lr': lr, 'lambda_cost': self.lambda_cost})
+        optimizer = OptimizerW(self.parameters(), lr=lr, weight_decay=weight_decay)
+
+        logger = train_utils.Logger().start(num_iterations)
+        vs_in, labels = vs_in.to(self.device), labels.to(self.device)
+        for i in range(num_iterations):
+            optimizer.zero_grad()
+
+            mask_original, mask = self.forward(vs_in)
+            frozen_model_output = self.cmlp(vs_in, override_mask=mask)
+
+            mse_loss = nnf.mse_loss(
+                frozen_model_output, labels, reduction='none')
+            mse_loss = mse_loss.mean(1) * self.inv_prob
+            mse_loss = mse_loss.mean()
+
+            # Multiply the mask with the weight tensor before calculating the cost
+            weighted_mask = torch.abs(mask_original) * self.weight_tensor
+            weighted_mask = weighted_mask.mean(1) * self.inv_prob
+
+            mask_cost = self.lambda_cost * weighted_mask.mean()
+
+            total_loss = mse_loss + mask_cost
+            logger.stash_iter('mse_train', mse_loss)
+            logger.stash_iter('mask_cost', mask_cost)
+            logger.stash_iter('total_loss', total_loss)
+            wandb.log({'mse_train': mse_loss, 'mask_cost': mask_cost, 'total_loss': total_loss})
+
+            if i % 100 == 0 and vs_base is not None:
+                log(self.cmlp, image, out_path, tag, vs_base, self.device, self, i, labels = eval_labels)
+                wandb.log({'main model weights size': mean_abs_weights(self.cmlp), 'mask model weights size': mean_abs_weights(self.mask)})
+
+
+            total_loss.backward()
+            optimizer.step()
+            logger.reset_iter()
+        logger.stop()
+
+        return mask
+
+    def forward(self, vs_in):
+        mask_original = self.mask_act(self.mask(vs_in))
+        mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
+        ones = torch.ones((vs_in.shape[0], self.cmlp.model.model.model[0].in_features - mask.shape[1]), device=vs_in.device)
+        mask = torch.cat([ones, mask], dim=-1)
+        return mask_original, mask
+
+
+def evaluate(model, vs_in, labels, funcs = [], mask=None, **kwargs):
+    model.eval()
+    with torch.no_grad():
+        if type(funcs) is list:
+            out = model(vs_in, override_mask=mask)
+            return [func(out, labels, **kwargs) for func in funcs]
+        else:
+            out =  model(vs_in, override_mask=mask)
+            return funcs(out, labels, **kwargs)
