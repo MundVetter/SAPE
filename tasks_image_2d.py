@@ -63,16 +63,6 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return model
 
-def evaluate_configurations(model, model2, mask_model, vs_in, labels, funcs, device, name="", **kwargs):
-    results = {}
-    vs_in = vs_in.to(device)
-    labels = labels.to(device)
-    _, mask = mask_model(vs_in)
-    results[f"{name}_model_no_mask"] = evaluate(model, vs_in, labels, funcs, **kwargs)
-    results[f"{name}_model_mask"] = evaluate(model, vs_in, labels, funcs, mask=mask, **kwargs)
-    results[f"{name}_model2_mask"] = evaluate(model2, vs_in, labels, funcs, mask=mask, **kwargs)
-    return results
-
 def main(PRETRAIN=True,
          LEARN_MASK=True,
          RETRAIN=True,
@@ -80,7 +70,7 @@ def main(PRETRAIN=True,
          EPOCHS=8000,
          IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.GlobalProgression,
+         CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
          LAMBDA_COST = 0.1,
          WEIGHT_DECAY = 1,
@@ -122,9 +112,7 @@ def main(PRETRAIN=True,
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
-                                               hidden_dim=256, std=20., num_layers=2, use_id_encoding=True)
-    control_params = encoding_controler.ControlParams(
-        num_iterations=1, epsilon=1e-3, res=MASK_RES)
+                                               hidden_dim=256, std=20., num_layers=3, use_id_encoding=True)
 
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}"
     tag = f"{name}_{tag_without_filename}"
@@ -132,74 +120,48 @@ def main(PRETRAIN=True,
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
     os.makedirs(out_path, exist_ok=True)
 
-    if PRETRAIN:
-        model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                         50, verbose=True, eval_labels = image_labels)
-        wandb.watch(model)
+    if CONTROLLER_TYPE == ControllerType.LearnableMask:
+        mask_model_params = copy.deepcopy(model_params)
+        mask_model_params.output_channels = 256
+        mask_model_params.std = 5.
 
-        torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
-    else:
-        model = encoding_controler.get_controlled_model(
-            model_params, ENCODING_TYPE, control_params, CONTROLLER_TYPE).to(device)
-        model.load_state_dict(torch.load(out_path / f'model_{tag}.pt'))
-
-    model_copy = copy.deepcopy(model)
-    mask_model_params = encoding_models.ModelParams(domain_dim=2, output_channels=256, num_frequencies=256,
-                                                    hidden_dim=256, std=5., num_layers=3, use_id_encoding=True)
-    weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5 - THRESHOLD
-  
-    control_params_2 = encoding_controler.ControlParams(
-        num_iterations=1000, epsilon=1e-5)
-
-    if LEARN_MASK:
+        weight_tensor = (model.model.encode.frequencies**2).sum(0)**0.5 - THRESHOLD
+        cmlp = encoding_controler.get_controlled_model(
+            model_params, ENCODING_TYPE, encoding_controler.ControlParams(), ControllerType.NoControl).to(device)
+    
         mask_model = encoding_controler.get_controlled_model(
-            mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
+            mask_model_params, ENCODING_TYPE, encoding_controler.ControlParams(), ControllerType.NoControl).to(device)
 
-        optMask = MaskModel(mask_model, model, weight_tensor, prob,
+        model = MaskModel(mask_model, cmlp, weight_tensor, prob,
                             lambda_cost=LAMBDA_COST, mask_act=torch.erf)
-        mask = optMask.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
-                           vs_base=vs_base, lr=LR, weight_decay = WEIGHT_DECAY,eval_labels=image_labels, log = log_evaluation_progress).detach()
+        mask = model.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
+                           vs_base=vs_base, lr=LR, weight_decay = WEIGHT_DECAY, eval_labels=image_labels, log = log_evaluation_progress).detach()
 
         torch.save(mask, out_path / f'mask_{tag}.pt')
-        torch.save(mask_model.state_dict(), out_path / f'mask_model_{tag}.pt')
     else:
-        mask = torch.load(out_path / f'mask_{tag}.pt')
-        mask_model = encoding_controler.get_controlled_model(
-            mask_model_params, ENCODING_TYPE, control_params_2, ControllerType.NoControl).to(device)
-        mask_model.load_state_dict(torch.load(
-            out_path / f'mask_model_{tag}.pt'))
-        optMask = MaskModel(mask_model, model, weight_tensor, prob, lambda_cost=1)
+        control_params = encoding_controler.ControlParams(
+        num_iterations=EPOCHS, epsilon=LR, res=MASK_RES)
+        model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
+                         100, verbose=True, eval_labels = image_labels)
 
-    if RETRAIN:
-        # only retrain last layer
-        for param in model.parameters():
-            param.requires_grad = False
+    torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
 
-        model.model.model.model[-1].weight.requires_grad = False
-        model.model.model.model[-1].bias.requires_grad = True
+    res_train = evaluate(model, vs_in.to(device), labels.to(device), psnr)
+    res_test = evaluate(model, vs_base.to(device), image_labels.to(device), psnr)
+    res_test_ssim = evaluate(model, vs_base.to(device), image_labels.to(device), ssim)
+    res_masked = evaluate(model, masked_cords.to(device), masked_labels.to(device), psnr)
 
-        control_params.num_iterations = 200
-        model2 = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                          50, verbose=True, mask=mask, model=model, mask_model=optMask, lr=1e-4, eval_labels = image_labels)
-        torch.save(model2.state_dict(), out_path / f'model2_{tag}.pt')
-    else:
-        model2 = encoding_controler.get_controlled_model(
-            model_params, ENCODING_TYPE, control_params, CONTROLLER_TYPE).to(device)
-        model2.load_state_dict(torch.load(out_path / f'model2_{tag}.pt'))
+    print(f"TRAIN PSNR: {res_train}")
+    print(f"TEST PSNR: {res_test}")
+    print(f"TEST SSIM: {res_test_ssim}")
+    print(f"TEST MASKED PSNR: {res_masked}")
 
-    # Evaluation
-    res_train = evaluate_configurations(model_copy, model2, optMask, vs_in, labels, psnr, device, "train")
-    res_test = evaluate_configurations(model_copy, model2, optMask, vs_base, image_labels, [psnr, ssim], device, "test", img_shape = target_image.shape)
-    res_masked = evaluate_configurations(model_copy, model2, optMask, masked_cords, masked_labels, psnr, device, "test_masked")
-
-    pretty_print_results(res_train, "train", psnr)
-    pretty_print_results(res_test, "test", [psnr, ssim])
-    pretty_print_results(res_masked, "test_masked", psnr)
-
-    
-    save_results_to_csv(res_train, "train", psnr, out_path, tag_without_filename)
-    save_results_to_csv(res_test, "test", [psnr, ssim], out_path, tag_without_filename)
-    save_results_to_csv(res_masked, "test_masked", psnr, out_path, tag_without_filename)
+    save_results_to_csv([
+        ("train", res_train), 
+        ("test", res_test), 
+        ("test_ssim", res_test_ssim), 
+        ("test_masked", res_masked)
+    ], out_path, tag_without_filename)
 
     return 0
 

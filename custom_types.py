@@ -73,6 +73,7 @@ class ControllerType(enum.Enum):
     NoControl = 'no_control'
     GlobalProgression = 'global_progression'
     SpatialProgressionStashed = 'spatial_progression_stashed'
+    LearnableMask = 'learnable_mask'
 
 
 class DeformType(Enum):

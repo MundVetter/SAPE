@@ -307,11 +307,12 @@ def mean_abs_weights(model):
 
 
 class MaskModel(nn.Module):
-    def __init__(self, mask_model, cmlp, weight_tensor, prob = 1, lambda_cost=0.01, mask_act = lambda x: x):
+    def __init__(self, mask_model, cmlp, weight_tensor, prob = 1, lambda_cost=0.01, mask_act = lambda x: x, loss = nnf.mse_loss):
         super().__init__()
         self.mask = mask_model
         self.cmlp = cmlp
         self.mask_act = mask_act
+        self.loss = loss
 
         self.lambda_cost = lambda_cost
         self.encoding_dim = cmlp.encoding_dim
@@ -330,52 +331,52 @@ class MaskModel(nn.Module):
         for i in range(num_iterations):
             optimizer.zero_grad()
 
-            mask_original, mask = self.forward(vs_in)
-            frozen_model_output = self.cmlp(vs_in, override_mask=mask)
-
-            mse_loss = nnf.mse_loss(
-                frozen_model_output, labels, reduction='none')
-            mse_loss = mse_loss.mean(1) * self.inv_prob
-            mse_loss = mse_loss.mean()
-
-            # Multiply the mask with the weight tensor before calculating the cost
-            weighted_mask = torch.abs(mask_original) * self.weight_tensor
-            weighted_mask = weighted_mask.mean(1) * self.inv_prob
-
-            mask_cost = self.lambda_cost * weighted_mask.mean()
-
-            total_loss = mse_loss + mask_cost
-            logger.stash_iter('mse_train', mse_loss)
-            logger.stash_iter('mask_cost', mask_cost)
-            logger.stash_iter('total_loss', total_loss)
-            wandb.log({'mse_train': mse_loss, 'mask_cost': mask_cost, 'total_loss': total_loss})
+            mask_original = self.train(vs_in, labels, logger)
+            optimizer.step()
 
             if i % 100 == 0 and vs_base is not None:
                 log(self.cmlp, image, out_path, tag, vs_base, self.device, self, i, labels = eval_labels)
                 wandb.log({'main model weights size': mean_abs_weights(self.cmlp), 'mask model weights size': mean_abs_weights(self.mask)})
-
-
-            total_loss.backward()
-            optimizer.step()
             logger.reset_iter()
         logger.stop()
 
-        return mask
+        return mask_original
+
+    def train(self, vs_in, labels, logger = None):
+        mask_original, result = self.forward(vs_in)
+
+        mse_loss = self.loss(
+                result, labels, reduction='none')
+        mse_loss = mse_loss.mean(1) * self.inv_prob
+        mse_loss = mse_loss.mean()
+
+        # Multiply the mask with the weight tensor before calculating the cost
+        weighted_mask = torch.abs(mask_original) * self.weight_tensor
+        weighted_mask = weighted_mask.mean(1) * self.inv_prob
+
+        mask_cost = self.lambda_cost * weighted_mask.mean()
+
+        total_loss = mse_loss + mask_cost
+        if logger is not None:
+            logger.stash_iter('mse_train', mse_loss)
+            logger.stash_iter('mask_cost', mask_cost)
+            logger.stash_iter('total_loss', total_loss)
+        wandb.log({'mse_train': mse_loss, 'mask_cost': mask_cost, 'total_loss': total_loss})
+
+        total_loss.backward()
+        return mask_original
 
     def forward(self, vs_in):
         mask_original = self.mask_act(self.mask(vs_in))
         mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
         ones = torch.ones((vs_in.shape[0], self.cmlp.model.model.model[0].in_features - mask.shape[1]), device=vs_in.device)
         mask = torch.cat([ones, mask], dim=-1)
-        return mask_original, mask
+        out = self.cmlp(vs_in, override_mask=mask)
+        return mask_original, out
 
 
-def evaluate(model, vs_in, labels, funcs = [], mask=None, **kwargs):
+def evaluate(model, vs_in, labels, func = [], **kwargs):
     model.eval()
     with torch.no_grad():
-        if type(funcs) is list:
-            out = model(vs_in, override_mask=mask)
-            return [func(out, labels, **kwargs) for func in funcs]
-        else:
-            out =  model(vs_in, override_mask=mask)
-            return funcs(out, labels, **kwargs)
+        out = model(vs_in)
+        return func(out, labels, **kwargs)
