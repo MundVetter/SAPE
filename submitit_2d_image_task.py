@@ -60,7 +60,8 @@ if __name__ == "__main__":
     learn_mask = not args.no_mask and not args.eval
     retrain = not args.no_retrain and not args.eval
 
+    group_name = str(uuid.uuid4())[:8]
     with executor.batch():
         for i in range(args.n_runs):
             for file_name in file_names:
-                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, LAMBDA_COST=args.lambda_cost, RUN_NAME=str(uuid.uuid4())[:8], THRESHOLD=args.threshold)
+                executor.submit(main, IMAGE_PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, PRETRAIN=pretrain, LEARN_MASK=learn_mask, RETRAIN=retrain, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, LAMBDA_COST=args.lambda_cost, RUN_NAME=group_name, THRESHOLD=args.threshold)
