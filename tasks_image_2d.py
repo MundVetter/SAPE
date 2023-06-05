@@ -91,7 +91,7 @@ def main(PRETRAIN=True,
     if constants.DEBUG:
         wandb.init(mode="disabled")
     else:
-        wandb.init(project="mund-thesis",
+        wandb.init(project="2d_image",
                    group=RUN_NAME,
             config={
                 "pretrain": PRETRAIN,

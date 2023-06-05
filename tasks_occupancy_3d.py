@@ -3,7 +3,7 @@ import constants
 from utils import mesh_utils, files_utils, train_utils, sdf_mesh, image_utils
 from models import encoding_models, encoding_controler
 import igl
-
+import wandb
 
 def get_in_out(mesh: T_Mesh, points: T):
     vs, faces = mesh[0].numpy(), mesh[1].numpy()
@@ -169,7 +169,14 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType, model_params: encodin
 
 
 def main():
+    if constants.DEBUG:
+        wandb.init(mode="disabled")
+    else:
+        wandb.init(project="3d_occupancy")
+
     device = CUDA(0)
+    print(device)
+
     mesh_path = files_utils.get_source_path()
     encoding_types = (EncodingType.NoEnc, EncodingType.FF,  EncodingType.FF)
     controller_types = (ControllerType.NoControl, ControllerType.NoControl, ControllerType.SpatialProgressionStashed)
