@@ -1,13 +1,13 @@
 from custom_types import *
 import constants
-from models import encoding_models, encoding_controler
+from models import encoding_controller, encoding_models
 from utils import files_utils, train_utils, mesh_utils, image_utils
 import cv2 as cv
 from PIL import  Image, ImageDraw
 import imageio
 
 
-def calibrate(model: encoding_controler.EncodedController, vs_in: T, target, epsilon=constants.EPSILON, max_iters=5000):
+def calibrate(model: encoding_controller.EncodedController, vs_in: T, target, epsilon=constants.EPSILON, max_iters=5000):
     optimizer = Optimizer(model.parameters(), lr=1e-4)
     logger = train_utils.Logger()
     logger.start(max_iters)
@@ -125,14 +125,14 @@ class Silhouette:
 
 
 def optimize(silhouette: Silhouette, encoding_type: EncodingType, model_params: encoding_models.ModelParams,
-             controller_type: ControllerType, control_params: encoding_controler.ControlParams, device: D, freq: int, verbose=True):
+             controller_type: ControllerType, control_params: encoding_controller.ControlParams, device: D, freq: int, verbose=True):
     name = silhouette.name
     dist = torch.distributions.categorical.Categorical(probs=torch.ones(silhouette.source_points.shape[0], device=device))
     tag = f'{encoding_type.value}_{controller_type.value}'
     lr = 1e-5
     if encoding_type is EncodingType.NoEnc:
         lr = 1e-4
-    model = encoding_controler.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
+    model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
     out_path = f'{constants.CHECKPOINTS_ROOT}/silhouette/{name}/'
     silhouette.export_poly(silhouette.target_pts, f'{out_path}target')
     opt = Optimizer(model.parameters(), lr=lr)
@@ -165,7 +165,7 @@ def main() -> int:
     encoding_types = (EncodingType.NoEnc, EncodingType.FF, EncodingType.FF)
     controller_types = (ControllerType.NoControl,ControllerType.NoControl, ControllerType.SpatialProgressionStashed)
     path = files_utils.get_source_path()
-    control_params = encoding_controler.ControlParams(num_iterations=10000, epsilon=1e-3, res=128, num_blocks=6)
+    control_params = encoding_controller.ControlParams(num_iterations=10000, epsilon=1e-3, res=128, num_blocks=6)
     model_params = encoding_models.ModelParams(domain_dim=1, output_channels=2, std=5., num_layers=2)
     silhouette = Silhouette(path, 500, device)
     for encoding_type, controller_type in zip(encoding_types, controller_types):

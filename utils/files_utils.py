@@ -1,3 +1,4 @@
+import csv
 import os
 import sys
 import constants as const
@@ -11,6 +12,7 @@ from PIL import Image
 import stl
 import matplotlib.pyplot as plt
 import plyfile
+from pathlib import Path
 
 
 def get_source_path():
@@ -66,8 +68,8 @@ def is_file(path: str):
 
 
 def add_suffix(path: str, suffix: str) -> str:
-    if len(str(path)) < len(suffix) or path[-len(str(suffix)):] != suffix:
-        path = path / suffix
+    if len(str(path)) < len(suffix) or str(path)[-len(str(suffix)):] != suffix:
+        path = str(path) + suffix
     return path
 
 
@@ -406,3 +408,17 @@ def measure_time(func, num_iters: int, *args):
     total_time = time.time() - start_time
     avg_time = total_time / num_iters
     print(f"{str(func).split()[1].split('.')[-1]} total time: {total_time}, average time: {avg_time}")
+
+
+def save_results_to_csv(result_tuples, path, tag):
+    file_name = path / f"{tag}-results.csv"
+
+    with open(file_name, mode='w', newline='') as csv_file:
+        fieldnames = ['dataset', 'result']
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+
+        writer.writeheader()
+        for name, value in result_tuples:
+            writer.writerow({'dataset': name, 'result': float(value)})
+
+

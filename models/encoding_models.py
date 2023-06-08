@@ -1,5 +1,9 @@
+import wandb
 from custom_types import *
 import abc
+
+from custom_types import OptimizerW, nn, nnf, torch
+from utils import train_utils
 
 
 class ModelParams:
@@ -18,41 +22,6 @@ class ModelParams:
         self.use_id_encoding = False
         self.fill_args(**kwargs)
 
-# class CNN1x1(nn.Module):
-#     def __init__(self, input_channels, hidden_size):
-#         super(CNN1x1, self).__init__()
-#         self.conv1 = nn.Conv1d(input_channels, hidden_size, kernel_size=1)
-#         self.relu = nn.ReLU()
-#         self.conv_hidden = nn.Conv1d(hidden_size, hidden_size, kernel_size=1)
-#         self.conv2 = nn.Conv1d(hidden_size, 1, kernel_size=1)
-#         self.sigmoid = nn.Sigmoid()
-
-#     def forward(self, x):
-#         x = self.conv1(x)
-#         x = self.relu(x)
-#         x = self.conv2(x)
-#         x = self.sigmoid(x)
-#         return x
-    
-class CNN1x1(nn.Module):
-    def __init__(self, layers: Union[List[int], Tuple[int, ...]]):
-        super(CNN1x1, self).__init__()
-
-        self.layers = nn.ModuleList()
-
-        for i in range(len(layers) - 1):
-            self.layers.append(nn.Conv1d(layers[i], layers[i + 1], kernel_size=1))
-            if i < len(layers) - 2:
-                self.layers.append(nn.ReLU())
-
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-
-        x = self.sigmoid(x)
-        return x
 
 class MLP(nn.Module):
 
@@ -116,7 +85,7 @@ class EncodedMlpModel(nn.Module, abc.ABC):
 
     def forward(self, x: T, *args, **kwargs) -> T:
         base_code = self.get_encoding(x)
-        if 'override_mask' in kwargs and kwargs['override_mask'] is not None:
+        if 'override_mask' in kwargs:
             base_code = base_code * kwargs['override_mask']
         out = self.mlp_forward(base_code)
         return out
@@ -127,34 +96,25 @@ class EncodedMlpModel(nn.Module, abc.ABC):
         self.encode = self.get_encoding_layer()
         self.model = self.get_mlp_model()
 
-class MultiEncodingLayer(EncodingLayer):
-    def __init__(self, encoders):
-        super().__init__()
-        self.encoders = nn.ModuleList(encoders)
+
+class IdEncoding(EncodingLayer):
+
+    def forward(self, x):
+        return x
 
     @property
     def output_channels(self) -> int:
-        return sum(encoder.output_channels for encoder in self.encoders)
+        return self.domain_dim
 
-    def forward(self, x: T):
-        return torch.cat([self.encoders[i](x[..., i:i+1]) for i in range(x.shape[-1])], dim=-1)
+    def __init__(self, domain_dim: int):
+        super(IdEncoding, self).__init__()
+        self.domain_dim = domain_dim
 
-class MultiEncodingLayer2(EncodingLayer):
-    def __init__(self, encoders: List[Tuple[EncodingLayer, List[int]]]):
-        super().__init__()
-        self.encoders = nn.ModuleList([encoder for encoder, _ in encoders])
-        self.dim_indices = [indices for _, indices in encoders]
 
-    @property
-    def output_channels(self) -> int:
-        return sum(encoder.output_channels for encoder in self.encoders)
+class BaseModel(EncodedMlpModel):
 
-    def forward(self, x: T):
-        encoded_parts = []
-        for encoder, indices in zip(self.encoders, self.dim_indices):
-            # Apply the encoder to its corresponding dimensions and concatenate the results. 
-            encoded_parts.append(encoder(torch.cat([x[..., i:i+1] for i in indices], dim=-1)))
-        return torch.cat(encoded_parts, dim=-1)
+    def get_encoding_layer(self) -> EncodingLayer:
+        return IdEncoding(self.opt.domain_dim)
 
 
 class FourierFeatures(EncodingLayer, abc.ABC):
@@ -183,27 +143,6 @@ class FourierFeatures(EncodingLayer, abc.ABC):
         self.num_frequencies: int = num_frequencies
         frequencies = self.init_frequencies(std)
         self.register_buffer("frequencies", frequencies)
-
-class IdEncoding(EncodingLayer):
-
-    def forward(self, x):
-        return x
-
-    @property
-    def output_channels(self) -> int:
-        return self.domain_dim
-
-    def __init__(self, domain_dim: int):
-        super(IdEncoding, self).__init__()
-        self.domain_dim = domain_dim
-
-
-class BaseModel(EncodedMlpModel):
-
-    def get_encoding_layer(self) -> EncodingLayer:
-        return IdEncoding(self.opt.domain_dim)
-
-
 
 
 class GaussianRandomFourierFeatures(FourierFeatures):
@@ -331,26 +270,11 @@ class RbfModel(EncodedMlpModel):
     def get_encoding_layer(self) -> EncodingLayer:
         return RadialBasisEncoding(self.opt.domain_dim, self.opt.num_frequencies, self.opt.std)
 
+
 class PrbfModel(EncodedMlpModel):
 
     def get_encoding_layer(self) -> EncodingLayer:
         return UniformRadialBasisGridEncoding(self.opt.domain_dim, self.opt.num_frequencies, self.opt.std)
-
-class MultiModel(EncodedMlpModel):
-    def get_encoding_layer(self) -> EncodingLayer:
-        return MultiEncodingLayer(
-            [GaussianRandomFourierFeatures(self.opt.domain_dim // 2, self.opt.num_frequencies, self.opt.std), IdEncoding(self.opt.domain_dim // 2)])
-    
-class MultiModel2(EncodedMlpModel):
-    def get_encoding_layer(self) -> EncodingLayer:
-        return MultiEncodingLayer2(
-            [(GaussianRandomFourierFeatures(self.opt.domain_dim, self.opt.num_frequencies, self.opt.std), [0, 1, 2, 3])])
-
-class MultiModel3(EncodedMlpModel):
-    def get_encoding_layer(self) -> EncodingLayer:
-        return MultiEncodingLayer2(
-            [(GaussianRandomFourierFeatures(self.opt.domain_dim, self.opt.num_frequencies, self.opt.std), [0, 1, 2])])
-
 
 
 def get_model(params: ModelParams, model_type: EncodingType) -> EncodedMlpModel:
@@ -367,3 +291,100 @@ def get_model(params: ModelParams, model_type: EncodingType) -> EncodedMlpModel:
     else:
         raise ValueError(f"{model_type.value} is not supported")
     return model
+
+
+def mean_abs_weights(model):
+    total_sum = 0.0
+    total_num = 0
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            total_sum += torch.abs(param.data).sum().item()
+            total_num += param.numel()
+
+    mean_val = total_sum / total_num if total_num > 0 else 0
+    return mean_val
+
+
+class MaskModel(nn.Module):
+    def __init__(self, mask_model, cmlp, prob = torch.tensor([1]), lambda_cost=0.01, mask_act = lambda x: x, loss = nnf.mse_loss, threshold = 0):
+        super().__init__()
+        self.is_progressive = True
+
+        self.mask = mask_model
+        self.cmlp = cmlp
+        self.mask_act = mask_act
+        self.loss = loss
+
+        self.lambda_cost = lambda_cost
+        self.encoding_dim = cmlp.encoding_dim
+        self.weight_tensor = (cmlp.model.encode.frequencies**2).sum(0)**0.5 - threshold
+        self.device = next(self.mask.parameters()).device
+        inv_prob = (1. / prob).float().to(self.device)
+        inv_prob = inv_prob / inv_prob.mean()
+        self.inv_prob = inv_prob
+
+        wandb.config.update({'lambda_cost': self.lambda_cost, 'threshold': threshold})
+
+    def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, weight_decay = 1, eval_labels = None, log = lambda *args, **kwargs: None):
+        wandb.config.update({'weight_decay': weight_decay})
+        optimizer = OptimizerW(self.parameters(), lr=lr, weight_decay=weight_decay)
+
+        logger = train_utils.Logger().start(num_iterations)
+        vs_in, labels = vs_in.to(self.device), labels.to(self.device)
+        for i in range(num_iterations):
+            optimizer.zero_grad()
+
+            mask_original = self.train_iter(vs_in, labels, logger)
+            optimizer.step()
+
+            if i % 100 == 0 and vs_base is not None:
+                log(self, image, out_path, tag, vs_base, self.device, i, labels = eval_labels)
+                wandb.log({'main model weights size': mean_abs_weights(self.cmlp), 'mask model weights size': mean_abs_weights(self.mask)})
+            logger.reset_iter()
+        logger.stop()
+
+        return mask_original
+
+    def train_iter(self, vs_in, labels, logger = None):
+        result, mask_original = self.forward(vs_in, get_mask=True)
+
+        mse_loss = self.loss(
+                result, labels, reduction='none')
+        mse_loss = mse_loss.mean(1) * self.inv_prob
+        mse_loss = mse_loss.mean()
+
+        # Multiply the mask with the weight tensor before calculating the cost
+        weighted_mask = torch.abs(mask_original) * self.weight_tensor
+        weighted_mask = weighted_mask.mean(1) * self.inv_prob
+
+        mask_cost = self.lambda_cost * weighted_mask.mean()
+
+        total_loss = mse_loss + mask_cost
+        if logger is not None:
+            logger.stash_iter('mse_train', mse_loss)
+            logger.stash_iter('mask_cost', mask_cost)
+            logger.stash_iter('total_loss', total_loss)
+        wandb.log({'mse_train': mse_loss, 'mask_cost': mask_cost, 'total_loss': total_loss})
+
+        total_loss.backward()
+        return mask_original
+
+    def forward(self, vs_in, get_mask = False):
+        mask_original = self.mask_act(self.mask(vs_in))
+        mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
+        ones = torch.ones((vs_in.shape[0], self.cmlp.model.model.model[0].in_features - mask.shape[1]), device=vs_in.device)
+        mask = torch.cat([ones, mask], dim=-1)
+        out = self.cmlp(vs_in, override_mask=mask)
+
+        if get_mask:
+            return out, mask_original
+        else:
+            return out
+
+
+def evaluate(model, vs_in, labels, func = [], **kwargs):
+    model.eval()
+    with torch.no_grad():
+        out = model(vs_in)
+        return func(out, labels, **kwargs)

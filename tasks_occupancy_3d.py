@@ -1,9 +1,10 @@
 from custom_types import *
 import constants
 from utils import mesh_utils, files_utils, train_utils, sdf_mesh, image_utils
-from models import encoding_models, encoding_controler
+from models import encoding_controller, encoding_models
 import igl
-
+import wandb
+import copy
 
 def get_in_out(mesh: T_Mesh, points: T):
     vs, faces = mesh[0].numpy(), mesh[1].numpy()
@@ -106,56 +107,60 @@ def model_for_export(model) -> Callable[[T], T]:
     return call
 
 
-def optimize(ds: MeshSampler, encoding_type: EncodingType, model_params: encoding_models.ModelParams,
-             controller_type: ControllerType, control_params: encoding_controler.ControlParams,
-             device: D, freq: int, verbose=False):
+def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: encoding_models.ModelParams = None,
+             controller_type: ControllerType = None, control_params: encoding_controller.ControlParams = None,
+             device: D = CPU, freq: int = 25, verbose=False, model = None, Opt = Optimizer, weight_decay = 0, custom_train = False, tag = '', out_path = 'checkpoints/3d_occupancy/', epochs = 1):
 
-    def export_heatmap():
-        model.eval()
-        res = control_params.res
-        mask = model.mask.view(res, res, res, -1).sum(-1).float() / model.mask.shape[-1]
-        mask = mask.view(1, 1, res, res, res)
-        mask = nnf.interpolate(mask, mode='trilinear', scale_factor=256 // res, align_corners=True).squeeze()
-        for i in range(3):
-            for j in range(mask.shape[0]):
-                mask_ = mask[:, :, j]
-                if i == 1:
-                    mask_ = mask_.permute(1, 0)
-                mask_ = mask_.flip(0)
-                hm = image_utils.to_heatmap(mask_)
-                files_utils.export_image(hm, f'{out_path}heatmap/{j:04d}.png')
-            image_utils.gifed(f'{out_path}heatmap/', .1, f'{tag}_{i:d}', reverse=True)
-            files_utils.delete_all(f'{out_path}heatmap/', '.png')
-            mask = mask.permute(2, 0, 1)
-        return
+    # def export_heatmap():
+    #     model.eval()
+    #     res = control_params.res
+    #     mask = model.mask.view(res, res, res, -1).sum(-1).float() / model.mask.shape[-1]
+    #     mask = mask.view(1, 1, res, res, res)
+    #     mask = nnf.interpolate(mask, mode='trilinear', scale_factor=256 // res, align_corners=True).squeeze()
+    #     for i in range(3):
+    #         for j in range(mask.shape[0]):
+    #             mask_ = mask[:, :, j]
+    #             if i == 1:
+    #                 mask_ = mask_.permute(1, 0)
+    #             mask_ = mask_.flip(0)
+    #             hm = image_utils.to_heatmap(mask_)
+    #             files_utils.export_image(hm, f'{out_path}heatmap/{j:04d}.png')
+    #         image_utils.gifed(f'{out_path}heatmap/', .1, f'{tag}_{i:d}', reverse=True)
+    #         files_utils.delete_all(f'{out_path}heatmap/', '.png')
+    #         mask = mask.permute(2, 0, 1)
+    #     return
 
     batch_size = 5000
     name = ds.name
-    tag = f'{encoding_type.value}_{controller_type.value}'
-    out_path = f'{constants.CHECKPOINTS_ROOT}/3d_occupancy/{name}/'
+
     ds.reset()
     in_iters = len(ds) // batch_size
-    epochs = control_params.num_iterations
-    control_params.num_iterations = in_iters * control_params.num_iterations
-    model = encoding_controler.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device).to(device)
+    # control_params.num_iterations = in_iters * num_i
+    if model is None:
+        model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device).to(device)
     lr = 1e-4
-    opt = Optimizer(model.parameters(), lr=lr)
+    opt = Opt(model.parameters(), lr=lr, weight_decay=weight_decay)
     logger = train_utils.Logger().start(epochs, tag=f"{name} {tag}")
     for i in range(epochs):
         loss_train = 0
         for j in range(in_iters):
             vs, labels = ds.points[j * batch_size: (j + 1) * batch_size], ds.labels[j * batch_size: (j + 1) * batch_size]
             opt.zero_grad()
-            out = model(vs)
-            loss_all = nnf.binary_cross_entropy_with_logits(out, labels, reduction='none')
-            loss = loss_all.mean()
-            loss.backward()
+            if custom_train:
+                model.train_iter(vs, labels, logger)
+            else:
+                out = model(vs)
+                loss_all = nnf.binary_cross_entropy_with_logits(out, labels, reduction='none')
+                loss = loss_all.mean()
+                loss.backward()
             opt.step()
-            model.stash_iteration(loss_all.mean(-1))
-            loss_train += loss.item()
-        loss_train = float(loss_train) / in_iters
-        logger.reset_iter('mse_train', loss_train)
-        model.update_progress()
+            if not custom_train:
+                model.stash_iteration(loss_all.mean(-1))
+                loss_train += loss.item()
+        if not custom_train:
+            loss_train = float(loss_train) / in_iters
+            logger.reset_iter('mse_train', loss_train)
+            model.update_progress()
         ds.reset()
         if (i + 1) % freq == 0 and verbose:
             sdf_mesh.create_mesh(model_for_export(model), f'{out_path}{tag}_meshes/{i:04d}', res=128, device=device)
@@ -164,22 +169,70 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType, model_params: encodin
     # model.load_state_dict(torch.load(f'{out_path}model_{tag}.pth', map_location=device))
     sdf_mesh.create_mesh(model_for_export(model), f'{out_path}final_{tag}', res=256, device=device)
     files_utils.save_model(model, f'{out_path}model_{tag}.pth')
-    if model.is_progressive:
-        export_heatmap()
+    # if model.is_progressive:
+    #     export_heatmap()
 
+def main(EPOCHS=100,
+         IMAGE_PATH="images/chibi.jpg",
+         ENCODING_TYPE = EncodingType.FF,
+         CONTROLLER_TYPE = ControllerType.LearnableMask,
+         MASK_RES = 512,
+         LAMBDA_COST = 0.1,
+         WEIGHT_DECAY = 1,
+         RUN_NAME=None,
+         LR = 1e-4,
+         THRESHOLD = 1) -> int:
 
-def main():
+    if constants.DEBUG:
+        wandb.init(mode="disabled")
+    else:
+        wandb.init(project="3d_occupancy",
+                   group=RUN_NAME,
+            config={
+                "image_path": IMAGE_PATH,
+                "encoding_type": ENCODING_TYPE,
+                "controller_type": CONTROLLER_TYPE,
+                "mask res": MASK_RES,
+                "lr": LR,
+                "epochs": EPOCHS,
+            })
+        wandb.run.log_code(".")
+
     device = CUDA(0)
-    mesh_path = files_utils.get_source_path()
-    encoding_types = (EncodingType.NoEnc, EncodingType.FF,  EncodingType.FF)
-    controller_types = (ControllerType.NoControl, ControllerType.NoControl, ControllerType.SpatialProgressionStashed)
-    std = 20
+    print(device)
+
+    mesh_path = "assets/stanford/armadillo.obj"
     ds = MeshSampler(mesh_path, device)
-    control_params = encoding_controler.ControlParams(num_iterations=500, epsilon=1e-1, res=64)
-    model_params = encoding_models.ModelParams(domain_dim=3, output_channels=1, std=std, hidden_dim=256,
-                                               num_layers=4, num_frequencies=256)
-    for encoding_type, controller_type in zip(encoding_types, controller_types):
-        optimize(ds, encoding_type, model_params, controller_type, control_params, device, 25, verbose=False)
+
+    name = ds.name
+    tag = f'{ENCODING_TYPE}_{CONTROLLER_TYPE}_{MASK_RES}'
+    out_path = f'{constants.CHECKPOINTS_ROOT}/3d_occupancy/{name}/'
+
+    model_params = encoding_models.ModelParams(domain_dim=3, output_channels=1, std=5., hidden_dim=256,
+                                                num_layers=4, num_frequencies=256, use_id_encoding=True)
+    if CONTROLLER_TYPE == ControllerType.LearnableMask:
+        mask_model_params = copy.deepcopy(model_params)
+        mask_model_params.output_channels = 256
+        mask_model_params.std = 1.5
+
+        cmlp = encoding_controller.get_controlled_model(
+            model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
+        mask_model = encoding_controller.get_controlled_model(
+            mask_model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
+
+        model = encoding_models.MaskModel(mask_model, cmlp, lambda_cost=LAMBDA_COST, mask_act=torch.erf, threshold = THRESHOLD, loss= nnf.binary_cross_entropy_with_logits)
+        optimize(ds, device = device, freq = 1, verbose=True, tag = tag, out_path = out_path, model = model, Opt = OptimizerW, weight_decay = WEIGHT_DECAY, custom_train = True, epochs = EPOCHS)
+        # torch.save
+    # else:
+        # control_params = encoding_controler.ControlParams(num_iterations=500, epsilon=1e-1, res=64)
+        
+    # encoding_types = (EncodingType.NoEnc, EncodingType.FF,  EncodingType.FF)
+    # controller_types = (ControllerType.NoControl, ControllerType.NoControl, ControllerType.SpatialProgressionStashed)
+    # std = 20
+    # model_params = encoding_models.ModelParams(domain_dim=3, output_channels=1, std=std, hidden_dim=256,
+    #                                            num_layers=4, num_frequencies=256)
+    # for encoding_type, controller_type in zip(encoding_types, controller_types):
+    #     optimize(ds, encoding_type, model_params, controller_type, control_params, device, 25, verbose=False)
 
 
 if __name__ == '__main__':

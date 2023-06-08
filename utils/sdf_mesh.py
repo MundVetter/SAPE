@@ -7,7 +7,8 @@ import time
 from custom_types import *
 from utils import files_utils
 from utils.train_utils import Logger
-
+import wandb
+import open3d as o3d
 
 def create_mesh(decoder: Union[nn.Module, Callable[[T], T]], filename, res=256, max_batch=32 ** 3, offset=None, scale=1, device=CPU, verbose=False):
     start = time.time()
@@ -71,6 +72,12 @@ def create_mesh(decoder: Union[nn.Module, Callable[[T], T]], filename, res=256, 
         device=device
     )
 
+def convert_ply_to_obj(ply_filepath, obj_filepath):
+    # Load the .ply file
+    ply = o3d.io.read_triangle_mesh(ply_filepath)
+
+    # Write the data to an .obj file
+    o3d.io.write_triangle_mesh(obj_filepath, ply)
 
 def convert_sdf_samples_to_ply(pytorch_3d_sdf_tensor, voxel_grid_origin, voxel_size,
                                ply_filename_out, offset=None, scale=None, device: D = CPU):
@@ -91,7 +98,7 @@ def convert_sdf_samples_to_ply(pytorch_3d_sdf_tensor, voxel_grid_origin, voxel_s
 
     verts, faces, normals, values = np.zeros((0, 3)), np.zeros((0, 3)), np.zeros((0, 3)), np.zeros(0)
     try:
-        verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(
+        verts, faces, normals, values = skimage.measure.marching_cubes(
             numpy_3d_sdf_tensor, level=0.0, spacing=[voxel_size] * 3
         )
     except BaseException:
@@ -131,6 +138,10 @@ def convert_sdf_samples_to_ply(pytorch_3d_sdf_tensor, voxel_grid_origin, voxel_s
         ply_filename_out = files_utils.add_suffix(ply_filename_out, '.ply')
         files_utils.init_folders(ply_filename_out)
         ply_data.write(ply_filename_out)
+        x = ply_filename_out.replace(".ply", ".obj")
+        convert_ply_to_obj(ply_filename_out, x)
+
+        wandb.log({'mesh': wandb.Object3D(open(x))})
 
     return torch.from_numpy(mesh_points.copy()).float().to(device), torch.from_numpy(faces.copy()).long().to(device)
 
