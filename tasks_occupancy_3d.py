@@ -206,7 +206,7 @@ def main(EPOCHS=10,
          RUN_NAME=None,
          LR = 1e-4,
          THRESHOLD = 1,
-         BATCHS_SIZE = 5000, **kwargs) -> int:
+         BATCH_SIZE = 5000, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -220,7 +220,7 @@ def main(EPOCHS=10,
                 "mask res": MASK_RES,
                 "lr": LR,
                 "epochs": EPOCHS,
-                "batch size": BATCHS_SIZE,
+                "batch size": BATCH_SIZE,
             })
         wandb.run.log_code(".")
 
@@ -247,13 +247,13 @@ def main(EPOCHS=10,
             mask_model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
 
         model = encoding_models.MaskModel(mask_model, cmlp, lambda_cost=LAMBDA_COST, mask_act=torch.erf, threshold = THRESHOLD, loss= nnf.binary_cross_entropy_with_logits)
-        model = optimize(ds, device = device, freq = 50, verbose=True, tag = tag, out_path = out_path, model = model, Opt = OptimizerW, weight_decay = WEIGHT_DECAY, custom_train = True, epochs = EPOCHS, batch_size = BATCHS_SIZE)
+        model = optimize(ds, device = device, freq = 50, verbose=True, tag = tag, out_path = out_path, model = model, Opt = OptimizerW, weight_decay = WEIGHT_DECAY, custom_train = True, epochs = EPOCHS, batch_size = BATCH_SIZE)
     else:
         control_params = encoding_controller.ControlParams(num_iterations=500, epsilon=1e-1, res=MASK_RES)
-        model = optimize(ds, encoding_type=ENCODING_TYPE, model_params=model_params, controller_type=CONTROLLER_TYPE, control_params=control_params, device=device, freq=50, verbose=True, tag=tag, out_path=out_path, epochs=EPOCHS, batch_size=BATCHS_SIZE)
+        model = optimize(ds, encoding_type=ENCODING_TYPE, model_params=model_params, controller_type=CONTROLLER_TYPE, control_params=control_params, device=device, freq=50, verbose=True, tag=tag, out_path=out_path, epochs=EPOCHS, batch_size=BATCH_SIZE)
 
     ds_eval = MeshSampler(mesh_path, device)
-    result = evaluate(model, ds_eval, batch_size=BATCHS_SIZE)
+    result = evaluate(model, ds_eval, batch_size=BATCH_SIZE)
     print(f"{tag} IOU: ", result)
     wandb.log({'iou': result})
 
