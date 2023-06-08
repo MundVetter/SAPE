@@ -1,4 +1,4 @@
-import run_submitit
+import submitit
 import tasks_image_2d
 import tasks_occupancy_3d
 import constants
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     else:
         raise ValueError("Task should be either 2d or 3d")
 
-    executor = run_submitit.AutoExecutor(folder="logs")
+    executor = submitit.AutoExecutor(folder="logs")
 
     controller_type = ControllerType.__members__[args.controller_type]
 
