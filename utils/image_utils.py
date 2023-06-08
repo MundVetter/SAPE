@@ -7,7 +7,6 @@ from custom_types import *
 from custom_types import T, ARRAY, nnf, torch
 from utils import files_utils, image_utils
 import imageio
-import os
 import pathlib
 import pickle
 
@@ -267,16 +266,6 @@ def ssim(img1, img2, img_shape=None, window_size=11, k1=0.01, k2=0.03, L=1.0, **
 
     return torch.mean(ssim_map)
 
-
-def get_image_filenames(folder_path):
-    # List all files in the folder
-    file_list = os.listdir(folder_path)
-
-    # Filter the file list to include only images with common extensions
-    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.gif']
-    image_filenames = [file for file in file_list if any(file.lower().endswith(ext) for ext in image_extensions)]
-
-    return image_filenames
 
 
 

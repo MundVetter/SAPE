@@ -66,7 +66,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
 def main(NON_UNIFORM=True,
          EPOCHS=1,
-         IMAGE_PATH="images/chibi.jpg",
+         PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.SpatialProgressionStashed,
          MASK_RES = 512,
@@ -74,7 +74,8 @@ def main(NON_UNIFORM=True,
          WEIGHT_DECAY = 1,
          RUN_NAME=None,
          LR = 1e-3,
-         THRESHOLD = 1) -> int:
+         THRESHOLD = 1,
+         SIGMA = 20., **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -83,22 +84,23 @@ def main(NON_UNIFORM=True,
                    group=RUN_NAME,
             config={
                 "non_uniform": NON_UNIFORM,
-                "image_path": IMAGE_PATH,
+                "image_path": PATH,
                 "encoding_type": ENCODING_TYPE,
                 "controller_type": CONTROLLER_TYPE,
                 "mask res": MASK_RES,
                 "threshold": THRESHOLD,
                 "lr": LR,
-                "epochs": EPOCHS
+                "epochs": EPOCHS,
+                "sigma": SIGMA,
             })
         wandb.run.log_code(".")
 
     device = CUDA(0)
     print(device)
 
-    image_path = constants.DATA_ROOT / IMAGE_PATH
+    image_path = constants.DATA_ROOT / PATH
     os.makedirs(constants.CHECKPOINTS_ROOT, exist_ok=True)
-    name = files_utils.split_path(IMAGE_PATH)[1]
+    name = files_utils.split_path(PATH)[1]
 
     scale = .25
     group = init_source_target(image_path, name, scale=scale,
@@ -106,7 +108,7 @@ def main(NON_UNIFORM=True,
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
-                                               hidden_dim=256, std=20., num_layers=3, use_id_encoding=True)
+                                               hidden_dim=256, std=SIGMA, num_layers=3, use_id_encoding=True)
 
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}"
     tag = f"{name}_{tag_without_filename}"
@@ -117,7 +119,7 @@ def main(NON_UNIFORM=True,
     if CONTROLLER_TYPE == ControllerType.LearnableMask:
         mask_model_params = copy.deepcopy(model_params)
         mask_model_params.output_channels = 256
-        mask_model_params.std = 5.
+        mask_model_params.std = SIGMA / 4
 
         cmlp = encoding_controller.get_controlled_model(
             model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)

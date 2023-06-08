@@ -5,6 +5,7 @@ from models import encoding_controller, encoding_models
 import igl
 import wandb
 import copy
+from pathlib import Path
 
 def get_in_out(mesh: T_Mesh, points: T):
     vs, faces = mesh[0].numpy(), mesh[1].numpy()
@@ -109,7 +110,7 @@ def model_for_export(model) -> Callable[[T], T]:
 
 def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: encoding_models.ModelParams = None,
              controller_type: ControllerType = None, control_params: encoding_controller.ControlParams = None,
-             device: D = CPU, freq: int = 25, verbose=False, model = None, Opt = Optimizer, weight_decay = 0, custom_train = False, tag = '', out_path = 'checkpoints/3d_occupancy/', epochs = 1):
+             device: D = CPU, freq: int = 25, verbose=False, model = None, Opt = Optimizer, weight_decay = 0, custom_train = False, tag = '', out_path = 'checkpoints/3d_occupancy/', epochs = 1, batch_size = 5000):
 
     # def export_heatmap():
     #     model.eval()
@@ -130,14 +131,13 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
     #         mask = mask.permute(2, 0, 1)
     #     return
 
-    batch_size = 5000
     name = ds.name
 
     ds.reset()
     in_iters = len(ds) // batch_size
     # control_params.num_iterations = in_iters * num_i
     if model is None:
-        model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device).to(device)
+        model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
     lr = 1e-4
     opt = Opt(model.parameters(), lr=lr, weight_decay=weight_decay)
     logger = train_utils.Logger().start(epochs, tag=f"{name} {tag}")
@@ -169,19 +169,44 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
     # model.load_state_dict(torch.load(f'{out_path}model_{tag}.pth', map_location=device))
     sdf_mesh.create_mesh(model_for_export(model), f'{out_path}final_{tag}', res=256, device=device)
     files_utils.save_model(model, f'{out_path}model_{tag}.pth')
+    return model
     # if model.is_progressive:
     #     export_heatmap()
 
-def main(EPOCHS=100,
+def intersect(vol1, vol2):
+    return (vol1 & vol2).float().sum()
+
+def union(vol1, vol2):
+    return (vol1 | vol2).float().sum()
+
+def evaluate(model, ds, batch_size = 5000):
+    model.eval()
+    ds.reset()
+    in_iters = len(ds) // batch_size
+    intersection = 0
+    _union = 0
+    with torch.no_grad():
+        for j in range(in_iters):
+            vs, labels = ds.points[j * batch_size: (j + 1) * batch_size], ds.labels[j * batch_size: (j + 1) * batch_size]
+            out = model(vs)
+            out = out.ge(0).int()
+            labels = labels.int()
+            intersection += intersect(out, labels)
+            _union += union(out, labels)
+    return intersection / _union
+
+def main(EPOCHS=10,
          IMAGE_PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.LearnableMask,
-         MASK_RES = 512,
+         CONTROLLER_TYPE = ControllerType.GlobalProgression,
+         MASK_RES = 64,
          LAMBDA_COST = 0.1,
          WEIGHT_DECAY = 1,
+         SIGMA = 20.,
          RUN_NAME=None,
          LR = 1e-4,
-         THRESHOLD = 1) -> int:
+         THRESHOLD = 1,
+         BATCHS_SIZE = 5000, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -195,17 +220,18 @@ def main(EPOCHS=100,
                 "mask res": MASK_RES,
                 "lr": LR,
                 "epochs": EPOCHS,
+                "batch size": BATCHS_SIZE,
             })
         wandb.run.log_code(".")
 
     device = CUDA(0)
     print(device)
 
-    mesh_path = "assets/stanford/armadillo.obj"
+    mesh_path = "assets/meshes/MalteseFalconSolid.stl"
     ds = MeshSampler(mesh_path, device)
 
     name = ds.name
-    tag = f'{ENCODING_TYPE}_{CONTROLLER_TYPE}_{MASK_RES}'
+    tag = f'{ENCODING_TYPE}_{CONTROLLER_TYPE}_{MASK_RES}_{RUN_NAME}'
     out_path = f'{constants.CHECKPOINTS_ROOT}/3d_occupancy/{name}/'
 
     model_params = encoding_models.ModelParams(domain_dim=3, output_channels=1, std=5., hidden_dim=256,
@@ -213,7 +239,7 @@ def main(EPOCHS=100,
     if CONTROLLER_TYPE == ControllerType.LearnableMask:
         mask_model_params = copy.deepcopy(model_params)
         mask_model_params.output_channels = 256
-        mask_model_params.std = 1.5
+        mask_model_params.std = SIGMA / 4
 
         cmlp = encoding_controller.get_controlled_model(
             model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
@@ -221,18 +247,19 @@ def main(EPOCHS=100,
             mask_model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
 
         model = encoding_models.MaskModel(mask_model, cmlp, lambda_cost=LAMBDA_COST, mask_act=torch.erf, threshold = THRESHOLD, loss= nnf.binary_cross_entropy_with_logits)
-        optimize(ds, device = device, freq = 1, verbose=True, tag = tag, out_path = out_path, model = model, Opt = OptimizerW, weight_decay = WEIGHT_DECAY, custom_train = True, epochs = EPOCHS)
-        # torch.save
-    # else:
-        # control_params = encoding_controler.ControlParams(num_iterations=500, epsilon=1e-1, res=64)
-        
-    # encoding_types = (EncodingType.NoEnc, EncodingType.FF,  EncodingType.FF)
-    # controller_types = (ControllerType.NoControl, ControllerType.NoControl, ControllerType.SpatialProgressionStashed)
-    # std = 20
-    # model_params = encoding_models.ModelParams(domain_dim=3, output_channels=1, std=std, hidden_dim=256,
-    #                                            num_layers=4, num_frequencies=256)
-    # for encoding_type, controller_type in zip(encoding_types, controller_types):
-    #     optimize(ds, encoding_type, model_params, controller_type, control_params, device, 25, verbose=False)
+        model = optimize(ds, device = device, freq = 50, verbose=True, tag = tag, out_path = out_path, model = model, Opt = OptimizerW, weight_decay = WEIGHT_DECAY, custom_train = True, epochs = EPOCHS, batch_size = BATCHS_SIZE)
+    else:
+        control_params = encoding_controller.ControlParams(num_iterations=500, epsilon=1e-1, res=MASK_RES)
+        model = optimize(ds, encoding_type=ENCODING_TYPE, model_params=model_params, controller_type=CONTROLLER_TYPE, control_params=control_params, device=device, freq=50, verbose=True, tag=tag, out_path=out_path, epochs=EPOCHS, batch_size=BATCHS_SIZE)
+
+    ds_eval = MeshSampler(mesh_path, device)
+    result = evaluate(model, ds_eval, batch_size=BATCHS_SIZE)
+    print(f"{tag} IOU: ", result)
+    wandb.log({'iou': result})
+
+    files_utils.save_results_to_csv([
+        ('3d_iou', result),
+    ], Path(out_path), tag)
 
 
 if __name__ == '__main__':

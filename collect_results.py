@@ -2,6 +2,7 @@ import os
 import re
 import pandas as pd
 import constants
+import sys
 
 def read_results_files(parent_folder):
     results_dfs = []
@@ -45,5 +46,11 @@ def main(parent_folder):
         print("\n")
 
 if __name__ == "__main__":
-    parent_folder = constants.CHECKPOINTS_ROOT / "2d_images"
+    folder = "2d_images"
+
+    # check argv[1] for the folder name
+    if len(sys.argv) > 1:
+        folder = sys.argv[1]
+
+    parent_folder = constants.CHECKPOINTS_ROOT / folder
     main(parent_folder)
