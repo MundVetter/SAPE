@@ -215,7 +215,7 @@ def main(EPOCHS=10,
         wandb.init(project="3d_occupancy",
                    group=RUN_NAME,
             config={
-                "image_path": IMAGE_PATH,
+                "path": PATH,
                 "encoding_type": ENCODING_TYPE,
                 "controller_type": CONTROLLER_TYPE,
                 "mask res": MASK_RES,
