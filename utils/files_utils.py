@@ -438,7 +438,7 @@ def get_mesh_filenames(folder_path):
     file_list = os.listdir(folder_path)
 
     # Filter the file list to include only images with common extensions
-    mesh_extensions = ['.obj', '.off', '.ply']
+    mesh_extensions = ['.obj', '.off', '.ply', '.stl']
     mesh_filenames = [file for file in file_list if any(file.lower().endswith(ext) for ext in mesh_extensions)]
 
     return mesh_filenames
