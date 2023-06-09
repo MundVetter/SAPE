@@ -225,6 +225,7 @@ def main(EPOCHS=10,
                 "lr": LR,
                 "epochs": EPOCHS,
                 "batch size": BATCH_SIZE,
+                "sigma": SIGMA,
             })
         wandb.run.log_code(".")
 

@@ -72,13 +72,6 @@ def create_mesh(decoder: Union[nn.Module, Callable[[T], T]], filename, res=256, 
         device=device
     )
 
-def convert_ply_to_obj(ply_filepath, obj_filepath):
-    # Load the .ply file
-    ply = o3d.io.read_triangle_mesh(ply_filepath)
-
-    # Write the data to an .obj file
-    o3d.io.write_triangle_mesh(obj_filepath, ply)
-
 def convert_sdf_samples_to_ply(pytorch_3d_sdf_tensor, voxel_grid_origin, voxel_size,
                                ply_filename_out, offset=None, scale=None, device: D = CPU):
     """
