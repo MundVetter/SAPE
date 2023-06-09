@@ -421,26 +421,20 @@ def save_results_to_csv(result_tuples, path, tag):
         for name, value in result_tuples:
             writer.writerow({'dataset': name, 'result': float(value)})
 
-
-def get_image_filenames(folder_path):
+def get_files_by_extension(folder_path, extensions):
     # List all files in the folder
     file_list = os.listdir(folder_path)
 
     # Filter the file list to include only images with common extensions
-    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.gif']
-    image_filenames = [file for file in file_list if any(file.lower().endswith(ext) for ext in image_extensions)]
+    file_names = [file for file in file_list if any(file.lower().endswith(ext) for ext in extensions)]
 
-    return image_filenames
+    return file_names
+
+
+def get_image_filenames(folder_path):
+    return get_files_by_extension(folder_path, ['.png', '.jpg', '.jpeg', '.bmp'])
 
 
 def get_mesh_filenames(folder_path):
-    # List all files in the folder
-    file_list = os.listdir(folder_path)
-
-    # Filter the file list to include only images with common extensions
-    mesh_extensions = ['.obj', '.off', '.ply', '.stl']
-    mesh_filenames = [file for file in file_list if any(file.lower().endswith(ext) for ext in mesh_extensions)]
-
-    return mesh_filenames
-
+    return get_files_by_extension(folder_path, ['.obj', '.off', '.ply', '.stl'])
 

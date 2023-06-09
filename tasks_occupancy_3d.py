@@ -197,7 +197,7 @@ def evaluate(model, ds, batch_size = 5000):
     return intersection / _union
 
 def main(EPOCHS=10,
-         IMAGE_PATH="images/chibi.jpg",
+         PATH="meshes/MalteseFalconSolid.stl",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
          MASK_RES = 64,
@@ -228,7 +228,7 @@ def main(EPOCHS=10,
     device = CUDA(0)
     print(device)
 
-    mesh_path = "assets/meshes/MalteseFalconSolid.stl"
+    mesh_path = str(constants.DATA_ROOT / PATH)
     ds = MeshSampler(mesh_path, device)
 
     name = ds.name
