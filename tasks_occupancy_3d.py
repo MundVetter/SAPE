@@ -144,7 +144,10 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
     for i in range(epochs):
         loss_train = 0
         for j in range(in_iters):
-            vs, labels = ds.points[j * batch_size: (j + 1) * batch_size], ds.labels[j * batch_size: (j + 1) * batch_size]
+            if len(ds) <= batch_size:
+                vs, labels = ds.points, ds.labels
+            else:
+                vs, labels = ds.points[j * batch_size: (j + 1) * batch_size], ds.labels[j * batch_size: (j + 1) * batch_size]
             opt.zero_grad()
             if custom_train:
                 model.train_iter(vs, labels, logger)
