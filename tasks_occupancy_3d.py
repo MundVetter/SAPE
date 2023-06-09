@@ -163,6 +163,7 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
             model.update_progress()
         ds.reset()
         if (i + 1) % freq == 0 and verbose:
+            print(i)
             sdf_mesh.create_mesh(model_for_export(model), f'{out_path}{tag}_meshes/{i:04d}', res=128, device=device)
             model.train()
     logger.stop()

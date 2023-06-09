@@ -152,6 +152,8 @@ def main(NON_UNIFORM=True,
     print(f"TEST SSIM: {res_test_ssim}")
     print(f"TEST MASKED PSNR: {res_masked}")
 
+    wandb.log({"train_psnr": res_train, "test_psnr": res_test, "test_ssim": res_test_ssim, "test_masked_psnr": res_masked})
+
     save_results_to_csv([
         ("train", res_train), 
         ("test", res_test), 

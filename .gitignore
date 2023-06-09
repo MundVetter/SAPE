@@ -6,3 +6,5 @@ logs/*
 wandb/
 assets/cache/*
 assets/checkpoints/*
+assets/.DS_Store
+.DS_Store
