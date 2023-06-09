@@ -132,7 +132,6 @@ def convert_sdf_samples_to_ply(pytorch_3d_sdf_tensor, voxel_grid_origin, voxel_s
         files_utils.init_folders(ply_filename_out)
         ply_data.write(ply_filename_out)
         x = ply_filename_out.replace(".ply", ".obj")
-        convert_ply_to_obj(ply_filename_out, x)
 
         wandb.log({'mesh': wandb.Object3D(open(x))})
 
