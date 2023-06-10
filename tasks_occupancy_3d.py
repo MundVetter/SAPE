@@ -187,7 +187,7 @@ def union(vol1, vol2):
 def evaluate(model, ds, batch_size = 5000):
     model.eval()
     ds.reset()
-    in_iters = len(ds) // batch_size
+    in_iters = max(len(ds) // batch_size, 1)
     intersection = 0
     _union = 0
     with torch.no_grad():
@@ -200,7 +200,7 @@ def evaluate(model, ds, batch_size = 5000):
             _union += union(out, labels)
     return intersection / _union
 
-def main(EPOCHS=10,
+def main(EPOCHS=1,
          PATH="meshes/MalteseFalconSolid.stl",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
