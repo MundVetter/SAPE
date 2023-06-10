@@ -258,6 +258,7 @@ def main(EPOCHS=10,
         model = optimize(ds, encoding_type=ENCODING_TYPE, model_params=model_params, controller_type=CONTROLLER_TYPE, control_params=control_params, device=device, freq=50, verbose=True, tag=tag, out_path=out_path, epochs=EPOCHS, batch_size=BATCH_SIZE)
 
     ds_eval = MeshSampler(mesh_path, device)
+    ds.split = (1, 0, 1)
     result = evaluate(model, ds_eval, batch_size=BATCH_SIZE)
     print(f"{tag} IOU: ", result)
     wandb.log({'iou': result})
