@@ -110,7 +110,7 @@ def model_for_export(model) -> Callable[[T], T]:
 
 def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: encoding_models.ModelParams = None,
              controller_type: ControllerType = None, control_params: encoding_controller.ControlParams = None,
-             device: D = CPU, freq: int = 25, verbose=False, model = None, Opt = Optimizer, weight_decay = 0, custom_train = False, tag = '', out_path = 'checkpoints/3d_occupancy/', epochs = 1, batch_size = 5000):
+             device: D = CPU, freq: int = 25, verbose=False, model = None, Opt = Optimizer, weight_decay = 0, custom_train = False, tag = '', out_path = 'checkpoints/3d_occupancy/', epochs = 1, batch_size = 5000, render_res = 256):
 
     # def export_heatmap():
     #     model.eval()
@@ -171,7 +171,7 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
             model.train()
     logger.stop()
     # model.load_state_dict(torch.load(f'{out_path}model_{tag}.pth', map_location=device))
-    sdf_mesh.create_mesh(model_for_export(model), f'{out_path}final_{tag}', res=1024, device=device)
+    sdf_mesh.create_mesh(model_for_export(model), f'{out_path}final_{tag}', res=render_res, device=device)
     files_utils.save_model(model, f'{out_path}model_{tag}.pth')
     return model
     # if model.is_progressive:
@@ -210,7 +210,8 @@ def main(EPOCHS=10,
          RUN_NAME=None,
          LR = 1e-4,
          THRESHOLD = 1,
-         BATCH_SIZE = 5000, **kwargs) -> int:
+         BATCH_SIZE = 5000,
+         RENDER_RES = 256, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -252,10 +253,10 @@ def main(EPOCHS=10,
             mask_model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
 
         model = encoding_models.MaskModel(mask_model, cmlp, lambda_cost=LAMBDA_COST, mask_act=torch.erf, threshold = THRESHOLD, loss= nnf.binary_cross_entropy_with_logits)
-        model = optimize(ds, device = device, freq = 50, verbose=True, tag = tag, out_path = out_path, model = model, Opt = OptimizerW, weight_decay = WEIGHT_DECAY, custom_train = True, epochs = EPOCHS, batch_size = BATCH_SIZE)
+        model = optimize(ds, device = device, freq = 50, verbose=True, tag = tag, out_path = out_path, model = model, Opt = OptimizerW, weight_decay = WEIGHT_DECAY, custom_train = True, epochs = EPOCHS, batch_size = BATCH_SIZE, render_res=RENDER_RES)
     else:
         control_params = encoding_controller.ControlParams(num_iterations=500, epsilon=1e-1, res=MASK_RES)
-        model = optimize(ds, encoding_type=ENCODING_TYPE, model_params=model_params, controller_type=CONTROLLER_TYPE, control_params=control_params, device=device, freq=50, verbose=True, tag=tag, out_path=out_path, epochs=EPOCHS, batch_size=BATCH_SIZE)
+        model = optimize(ds, encoding_type=ENCODING_TYPE, model_params=model_params, controller_type=CONTROLLER_TYPE, control_params=control_params, device=device, freq=50, verbose=True, tag=tag, out_path=out_path, epochs=EPOCHS, batch_size=BATCH_SIZE, render_res=RENDER_RES)
 
     ds_eval = MeshSampler(mesh_path, device)
     result = evaluate(model, ds_eval, batch_size=BATCH_SIZE)
