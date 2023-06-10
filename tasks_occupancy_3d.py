@@ -171,7 +171,7 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
             model.train()
     logger.stop()
     # model.load_state_dict(torch.load(f'{out_path}model_{tag}.pth', map_location=device))
-    sdf_mesh.create_mesh(model_for_export(model), f'{out_path}final_{tag}', res=256, device=device)
+    sdf_mesh.create_mesh(model_for_export(model), f'{out_path}final_{tag}', res=1024, device=device)
     files_utils.save_model(model, f'{out_path}model_{tag}.pth')
     return model
     # if model.is_progressive:
