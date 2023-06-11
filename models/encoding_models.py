@@ -323,7 +323,7 @@ class MaskModel(nn.Module):
         if not compensate_inv_prob:
             prob = torch.ones(1)
         inv_prob = (1. / prob).float().to(self.device)
-        inv_prob = inv_prob / inv_prob.mean()
+        self.inv_prob = inv_prob / inv_prob.mean()
 
         wandb.config.update({'lambda_cost': self.lambda_cost, 'threshold': threshold})
 
