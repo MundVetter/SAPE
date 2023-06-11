@@ -181,7 +181,7 @@ def load_ply(path: str):
     path = add_suffix(path, '.ply')
     plydata = plyfile.PlyData.read(path)
     keys = {element.name for element in plydata.elements}
-    points = [torch.from_numpy(plydata['vertex'][axis]) for axis in ('x', 'y', 'z')]
+    points = [torch.from_numpy(plydata['vertex'][axis]).astype(np.float32) for axis in ('x', 'y', 'z')]
     points = torch.stack(points, dim=1).float()
     faces = []
     if 'face' in keys:
