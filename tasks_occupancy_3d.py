@@ -42,10 +42,10 @@ class MeshSampler(Dataset):
         return near_points, labels, on_surface_points
 
     def init_samples(self, total=1e6) -> TS:
-        # split = [float(part) / sum(self.split) for part in self.split]
-        near_points_a, labels_a, on_surface_points = self.get_surface_points(int(total * self.split[0]), self.stds[0])
-        near_points_b, labels_b, _ = self.get_surface_points(int(total * self.split[1]), self.stds[1], on_surface_points)
-        random_points, labels_c, = self.get_random_points(int(total * self.split[2]))
+        split = [float(part) / sum(self.split) for part in self.split]
+        near_points_a, labels_a, on_surface_points = self.get_surface_points(int(total * split[0]), .01)
+        near_points_b, labels_b, _ = self.get_surface_points(int(total * split[0]), .1, on_surface_points)
+        random_points, labels_c, = self.get_random_points(int(total - near_points_a.shape[0] * 2))
         all_points = torch.cat((near_points_a, near_points_b, random_points), dim=0)
         labels = torch.cat((labels_a, labels_b, labels_c), dim=0)
         return all_points.cpu(), labels.cpu()
@@ -83,7 +83,7 @@ class MeshSampler(Dataset):
         self.name = files_utils.split_path(path)[1]
         self.data = None #self.load_data(path)
         self.cache_saved = False
-        self.split = (1/3, 1/3, 1/3)
+        self.split = (3, 3, 3)
         self.buffer_size = buffer_size
         self.mesh_path = path
         self.pointer = 0
@@ -94,7 +94,6 @@ class MeshSampler(Dataset):
             self.cache_saved = len(self.data) >= self.buffer_size
         self.points: TN = None
         self.labels: TN = None
-        self.stds = (.01, .1)
 
 
 def model_for_export(model) -> Callable[[T], T]:
@@ -135,7 +134,7 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
     name = ds.name
 
     ds.reset()
-    in_iters = max(len(ds) // batch_size, 1)
+    in_iters = len(ds) // batch_size
     # control_params.num_iterations = in_iters * num_i
     if model is None:
         model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
@@ -187,7 +186,7 @@ def union(vol1, vol2):
 def evaluate(model, ds, batch_size = 5000):
     model.eval()
     ds.reset()
-    in_iters = max(len(ds) // batch_size, 1)
+    in_iters = len(ds) // batch_size
     intersection = 0
     _union = 0
     with torch.no_grad():
@@ -200,7 +199,7 @@ def evaluate(model, ds, batch_size = 5000):
             _union += union(out, labels)
     return intersection / _union
 
-def main(EPOCHS=1,
+def main(EPOCHS=10,
          PATH="meshes/MalteseFalconSolid.stl",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.GlobalProgression,
@@ -260,21 +259,12 @@ def main(EPOCHS=1,
         model = optimize(ds, encoding_type=ENCODING_TYPE, model_params=model_params, controller_type=CONTROLLER_TYPE, control_params=control_params, device=device, freq=50, verbose=True, tag=tag, out_path=out_path, epochs=EPOCHS, batch_size=BATCH_SIZE, render_res=RENDER_RES)
 
     ds_eval = MeshSampler(mesh_path, device)
-    ds.split = (1, 0, 0)
-    ds.stds = (0.001, 0)
-    result_near = evaluate(model, ds_eval, batch_size=BATCH_SIZE)
-    print(f"{tag} IOU near: ", result_near)
-    wandb.log({'iou near': result_near})
-
-    ds_eval = MeshSampler(mesh_path, device)
-    ds.split = (0, 0, 1)
-    result_random = evaluate(model, ds_eval, batch_size=BATCH_SIZE)
-    print(f"{tag} IOU random: ", result_random)
-    wandb.log({'iou random': result_random})
+    result = evaluate(model, ds_eval, batch_size=BATCH_SIZE)
+    print(f"{tag} IOU: ", result)
+    wandb.log({'iou': result})
 
     files_utils.save_results_to_csv([
-        ('3d_iou_near', result_near),
-        ('3d_iou_random', result_random),
+        ('3d_iou', result),
     ], Path(out_path), tag)
 
 
