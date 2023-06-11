@@ -320,12 +320,10 @@ class MaskModel(nn.Module):
         self.encoding_dim = cmlp.encoding_dim
         self.weight_tensor = (cmlp.model.encode.frequencies**2).sum(0)**0.5 - threshold
         self.device = next(self.mask.parameters()).device
+        if not compensate_inv_prob:
+            prob = torch.ones(1)
         inv_prob = (1. / prob).float().to(self.device)
         inv_prob = inv_prob / inv_prob.mean()
-        if compensate_inv_prob:
-            self.inv_prob = inv_prob
-        else:
-            self.inv_prob = torch.ones(1)
 
         wandb.config.update({'lambda_cost': self.lambda_cost, 'threshold': threshold})
 
