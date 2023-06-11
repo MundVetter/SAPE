@@ -307,7 +307,7 @@ def mean_abs_weights(model):
 
 
 class MaskModel(nn.Module):
-    def __init__(self, mask_model, cmlp, prob = torch.tensor([1]), lambda_cost=0.01, mask_act = lambda x: x, loss = nnf.mse_loss, threshold = 0):
+    def __init__(self, mask_model, cmlp, prob = torch.tensor([1]), lambda_cost=0.01, mask_act = lambda x: x, loss = nnf.mse_loss, threshold = 0, compensate_inv_prob = False):
         super().__init__()
         self.is_progressive = True
 
@@ -322,7 +322,10 @@ class MaskModel(nn.Module):
         self.device = next(self.mask.parameters()).device
         inv_prob = (1. / prob).float().to(self.device)
         inv_prob = inv_prob / inv_prob.mean()
-        self.inv_prob = inv_prob
+        if compensate_inv_prob:
+            self.inv_prob = inv_prob
+        else:
+            self.inv_prob = torch.ones(1)
 
         wandb.config.update({'lambda_cost': self.lambda_cost, 'threshold': threshold})
 

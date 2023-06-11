@@ -18,7 +18,7 @@ import wandb
 
 def optimize(encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controller.ControlParams, group, tag, out_path, device: D,
-             freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None):
+             freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None, compensate_inv_prob = False):
     # TODO: change to original SAPE
     vs_base, vs_in, labels, target_image, image_labels, _, prob = group
     model_provided = True
@@ -44,9 +44,11 @@ def optimize(encoding_type: EncodingType, model_params,
         loss_all = nnf.mse_loss(out, labels, reduction='none')
         if not model_provided:
             model.stash_iteration(loss_all.mean(-1))
-        loss_all[:, 0] *= inv_prob
-        loss_all[:, 1] *= inv_prob
-        loss_all[:, 2] *= inv_prob
+        
+        if compensate_inv_prob:
+            loss_all[:, 0] *= inv_prob
+            loss_all[:, 1] *= inv_prob
+            loss_all[:, 2] *= inv_prob
         loss = loss_all.mean()
         if i == 0:
             print(loss)
@@ -75,7 +77,8 @@ def main(NON_UNIFORM=True,
          RUN_NAME=None,
          LR = 1e-3,
          THRESHOLD = 1,
-         SIGMA = 20., **kwargs) -> int:
+         SIGMA = 20.,
+         INV_PROB = True, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -92,6 +95,7 @@ def main(NON_UNIFORM=True,
                 "lr": LR,
                 "epochs": EPOCHS,
                 "sigma": SIGMA,
+                "inv prob": INV_PROB
             })
         wandb.run.log_code(".")
 
@@ -138,7 +142,7 @@ def main(NON_UNIFORM=True,
         control_params = encoding_controller.ControlParams(
         num_iterations=EPOCHS, epsilon=LR, res=MASK_RES)
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                         100, verbose=True, eval_labels = image_labels)
+                         100, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB)
 
     torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
 
