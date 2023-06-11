@@ -162,6 +162,7 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
                 loss_train += loss.item()
         if not custom_train:
             loss_train = float(loss_train) / in_iters
+            wandb.log({'mse_train': loss_train})
             logger.reset_iter('mse_train', loss_train)
             model.update_progress()
         if len(ds) > batch_size:
