@@ -164,7 +164,8 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
             loss_train = float(loss_train) / in_iters
             logger.reset_iter('mse_train', loss_train)
             model.update_progress()
-        ds.reset()
+        if len(ds) > batch_size:
+            ds.reset()
         if (i + 1) % freq == 0 and verbose:
             print(i)
             sdf_mesh.create_mesh(model_for_export(model), f'{out_path}{tag}_meshes/{i:04d}', res=128, device=device)
