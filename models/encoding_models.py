@@ -311,7 +311,7 @@ def mean_abs_weights(model):
 
 
 class MaskModel(nn.Module):
-    def __init__(self, mask_model, cmlp, prob = torch.tensor([1]), lambda_cost=0.01, mask_act = lambda x: x, loss = nnf.mse_loss, threshold = 0, compensate_inv_prob = False):
+    def __init__(self, mask_model, cmlp, prob = torch.tensor([1]), lambda_cost=0.01, mask_act = lambda x: x, loss = nnf.mse_loss, threshold = 0, compensate_inv_prob = False, bn = False):
         super().__init__()
         self.is_progressive = True
 
@@ -326,6 +326,7 @@ class MaskModel(nn.Module):
         self.device = next(self.mask.parameters()).device
         self.best_model = None
         self.lowest_loss = 9999
+        self.bn = bn
 
         self.batch_norm = nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1], momentum=1).to(self.device)
 
@@ -399,7 +400,8 @@ class MaskModel(nn.Module):
 
     def forward(self, vs_in, get_mask = False):
         mask_original = self.mask_act(self.mask(vs_in))
-        mask_original = self.batch_norm(mask_original)
+        if self.bn:
+            mask_original = self.batch_norm(mask_original)
 
         mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
         ones = torch.ones((vs_in.shape[0], self.cmlp.model.model.model[0].in_features - mask.shape[1]), device=vs_in.device)
