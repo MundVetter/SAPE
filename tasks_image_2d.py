@@ -80,7 +80,8 @@ def main(NON_UNIFORM=False,
          SIGMA = 20.,
          INV_PROB = True,
          BN = True,
-         ID = False, **kwargs) -> int:
+         ID = False,
+         LAYERS = 3, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -100,6 +101,7 @@ def main(NON_UNIFORM=False,
                 "inv prob": INV_PROB,
                 "bn": BN,
                 "use_id": ID,
+                "layers": LAYERS,
             })
         wandb.run.log_code(".")
 
@@ -116,7 +118,7 @@ def main(NON_UNIFORM=False,
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
-                                               hidden_dim=256, std=SIGMA, num_layers=3, use_id_encoding=ID, bn = BN)
+                                               hidden_dim=256, std=SIGMA, num_layers=LAYERS, use_id_encoding=ID, bn = BN)
 
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}"
     tag = f"{name}_{tag_without_filename}"
@@ -146,7 +148,7 @@ def main(NON_UNIFORM=False,
         torch.save(mask, out_path / f'mask_{tag}.pt')
     else:
         control_params = encoding_controller.ControlParams(
-        num_iterations=EPOCHS, epsilon=LR, res=MASK_RES)
+        num_iterations=EPOCHS, epsilon=1e-3, res=MASK_RES)
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                          100, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB)
 
