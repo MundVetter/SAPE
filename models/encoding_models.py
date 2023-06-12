@@ -37,7 +37,7 @@ class MLP(nn.Module):
             if i < len(layers) - 2:
                 layers_.append(nn.ReLU(True))
                 if bn:
-                    layers_.append(nn.BatchNorm1d(layers[i + 1]))
+                    layers_.append(nn.BatchNorm1d(layers[i + 1]), momemtum = 1)
         self.model = nn.Sequential(*layers_)
 
 class Sin(nn.Module):
@@ -324,7 +324,7 @@ class MaskModel(nn.Module):
         self.weight_tensor = (cmlp.model.encode.frequencies**2).sum(0)**0.5 - threshold
         self.device = next(self.mask.parameters()).device
 
-        self.batch_norm = nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1]).to(self.device)
+        self.batch_norm = nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1], momentum=1).to(self.device)
 
 
         if not compensate_inv_prob:
