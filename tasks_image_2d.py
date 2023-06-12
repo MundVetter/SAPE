@@ -103,6 +103,7 @@ def main(NON_UNIFORM=False,
                 "bn": BN,
                 "use_id": ID,
                 "layers": LAYERS,
+                "mask sigma": MASK_SIGMA,
             })
         wandb.run.log_code(".")
 
