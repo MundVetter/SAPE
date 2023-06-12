@@ -320,6 +320,10 @@ class MaskModel(nn.Module):
         self.encoding_dim = cmlp.encoding_dim
         self.weight_tensor = (cmlp.model.encode.frequencies**2).sum(0)**0.5 - threshold
         self.device = next(self.mask.parameters()).device
+
+        self.batch_norm = nn.BatchNorm1d(self.encoding_dim)
+
+
         if not compensate_inv_prob:
             prob = torch.ones(1)
         inv_prob = (1. / prob).float().to(self.device)
@@ -329,13 +333,14 @@ class MaskModel(nn.Module):
 
     def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, weight_decay = 1, eval_labels = None, log = lambda *args, **kwargs: None):
         wandb.config.update({'weight_decay': weight_decay})
-        optimizer = OptimizerW([{
-            'params': self.mask.parameters(),
-            'weight_decay': weight_decay
-        }, {
-            'params': self.cmlp.parameters(),
-            'weight_decay': weight_decay * 2
-        }], lr=lr)
+        # optimizer = OptimizerW([{
+        #     'params': self.mask.parameters(),
+        #     'weight_decay': weight_decay
+        # }, {
+        #     'params': self.cmlp.parameters(),
+        #     'weight_decay': weight_decay
+        # }], lr=lr)
+        optimizer = OptimizerW(self.parameters(), lr=lr, weight_decay=weight_decay)
 
         logger = train_utils.Logger().start(num_iterations)
         vs_in, labels = vs_in.to(self.device), labels.to(self.device)
@@ -379,6 +384,8 @@ class MaskModel(nn.Module):
 
     def forward(self, vs_in, get_mask = False):
         mask_original = self.mask_act(self.mask(vs_in))
+        mask_original = self.batch_norm(mask_original)
+
         mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
         ones = torch.ones((vs_in.shape[0], self.cmlp.model.model.model[0].in_features - mask.shape[1]), device=vs_in.device)
         mask = torch.cat([ones, mask], dim=-1)
