@@ -79,7 +79,8 @@ def main(NON_UNIFORM=True,
          THRESHOLD = 1,
          SIGMA = 20.,
          INV_PROB = True,
-         BN = True, **kwargs) -> int:
+         BN = True,
+         ID = False, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -96,7 +97,9 @@ def main(NON_UNIFORM=True,
                 "lr": LR,
                 "epochs": EPOCHS,
                 "sigma": SIGMA,
-                "inv prob": INV_PROB
+                "inv prob": INV_PROB,
+                "bn": BN,
+                "use_id": ID,
             })
         wandb.run.log_code(".")
 
@@ -113,7 +116,7 @@ def main(NON_UNIFORM=True,
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
-                                               hidden_dim=256, std=SIGMA, num_layers=3, use_id_encoding=False, bn = BN)
+                                               hidden_dim=256, std=SIGMA, num_layers=3, use_id_encoding=ID, bn = BN)
 
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}"
     tag = f"{name}_{tag_without_filename}"
