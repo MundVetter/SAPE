@@ -37,7 +37,7 @@ class MLP(nn.Module):
             if i < len(layers) - 2:
                 layers_.append(nn.ReLU(True))
                 if bn:
-                    layers_.append(nn.BatchNorm1d(layers[i + 1], momemtum = 1))
+                    layers_.append(nn.BatchNorm1d(layers[i + 1], momentum = 1))
         self.model = nn.Sequential(*layers_)
 
 class Sin(nn.Module):
