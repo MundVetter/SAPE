@@ -334,7 +334,7 @@ class MaskModel(nn.Module):
             'weight_decay': weight_decay
         }, {
             'params': self.cmlp.parameters(),
-            'weight_decay': weight_decay * 1.2
+            'weight_decay': weight_decay * 1.5
         }], lr=lr)
 
         logger = train_utils.Logger().start(num_iterations)
