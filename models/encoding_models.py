@@ -4,6 +4,7 @@ import abc
 
 from custom_types import OptimizerW, nn, nnf, torch
 from utils import train_utils
+import copy
 
 
 class ModelParams:
@@ -323,6 +324,8 @@ class MaskModel(nn.Module):
         self.encoding_dim = cmlp.encoding_dim
         self.weight_tensor = (cmlp.model.encode.frequencies**2).sum(0)**0.5 - threshold
         self.device = next(self.mask.parameters()).device
+        self.best_model = None
+        self.lowest_loss = 9999
 
         self.batch_norm = nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1], momentum=1).to(self.device)
 
@@ -361,6 +364,8 @@ class MaskModel(nn.Module):
             logger.reset_iter()
         logger.stop()
 
+        self.load_state_dict(self.best_model)
+
         return mask_original
 
     def train_iter(self, vs_in, labels, logger = None):
@@ -378,6 +383,11 @@ class MaskModel(nn.Module):
         mask_cost = self.lambda_cost * weighted_mask.mean()
 
         total_loss = mse_loss + mask_cost
+        if total_loss < self.lowest_loss:
+            self.lowest_loss = total_loss
+            self.best_model = copy.deepcopy(self.state_dict())
+            wandb.log({'lowest_loss': self.lowest_loss})
+
         if logger is not None:
             logger.stash_iter('mse_train', mse_loss)
             logger.stash_iter('mask_cost', mask_cost)
