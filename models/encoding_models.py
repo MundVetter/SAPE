@@ -329,7 +329,13 @@ class MaskModel(nn.Module):
 
     def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, weight_decay = 1, eval_labels = None, log = lambda *args, **kwargs: None):
         wandb.config.update({'weight_decay': weight_decay})
-        optimizer = OptimizerW(self.parameters(), lr=lr, weight_decay=weight_decay)
+        optimizer = OptimizerW([{
+            'params': self.mask.parameters(),
+            'weight_decay': weight_decay
+        }, {
+            'params': self.cmlp.parameters(),
+            'weight_decay': weight_decay * 1.2
+        }], lr=lr)
 
         logger = train_utils.Logger().start(num_iterations)
         vs_in, labels = vs_in.to(self.device), labels.to(self.device)
