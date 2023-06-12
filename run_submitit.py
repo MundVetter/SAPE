@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--mask_res", type=int, default=512)
     parser.add_argument("--no_inv_prob", action='store_true')
-    parser.add_argument('--weight_decay', type=int, default=1)
+    parser.add_argument('--weight_decay', type=float, default=1.)
 
     parser.add_argument("--lambda_cost", type=float, default=0.1)
     parser.add_argument("--threshold", type=float, default=1 - 1e-3)
