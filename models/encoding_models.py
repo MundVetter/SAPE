@@ -344,6 +344,7 @@ class MaskModel(nn.Module):
         #     'weight_decay': weight_decay
         # }], lr=lr)
         optimizer = OptimizerW(self.parameters(), lr=lr, weight_decay=weight_decay)
+        scheduler = torch.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
         logger = train_utils.Logger().start(num_iterations)
         vs_in, labels = vs_in.to(self.device), labels.to(self.device)
@@ -352,6 +353,7 @@ class MaskModel(nn.Module):
 
             mask_original = self.train_iter(vs_in, labels, logger)
             optimizer.step()
+            scheduler.step()
 
             if i % 100 == 0 and vs_base is not None:
                 log(self, image, out_path, tag, vs_base, self.device, i, labels = eval_labels)
