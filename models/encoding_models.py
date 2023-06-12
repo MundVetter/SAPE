@@ -321,7 +321,7 @@ class MaskModel(nn.Module):
         self.weight_tensor = (cmlp.model.encode.frequencies**2).sum(0)**0.5 - threshold
         self.device = next(self.mask.parameters()).device
 
-        self.batch_norm = nn.BatchNorm1d(self.encoding_dim)
+        self.batch_norm = nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1]).to(self.device)
 
 
         if not compensate_inv_prob:

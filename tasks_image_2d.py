@@ -67,10 +67,10 @@ def optimize(encoding_type: EncodingType, model_params,
     return model
 
 def main(NON_UNIFORM=True,
-         EPOCHS=1,
+         EPOCHS=2,
          PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.SpatialProgressionStashed,
+         CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
          LAMBDA_COST = 0.1,
          WEIGHT_DECAY = 1,
