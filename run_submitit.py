@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument("--no_inv_prob", action='store_true')
     parser.add_argument('--weight_decay', type=float, default=1.)
     parser.add_argument("--layers", type=int, default=3)
+    parser.add_argument("--mask_sigma", type=float, default=5.)
 
     parser.add_argument("--lambda_cost", type=float, default=0.1)
     parser.add_argument("--threshold", type=float, default=1 - 1e-3)
@@ -70,5 +71,5 @@ if __name__ == "__main__":
         for i in range(args.n_runs):
             group_name = str(uuid.uuid4())[:8]
             for file_name in file_names:
-                executor.submit(main, PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, LAMBDA_COST=args.lambda_cost, RUN_NAME=group_name, THRESHOLD=args.threshold, SIGMA=args.sigma, BATCH_SIZE=args.batch_size, LR=args.lr, ENCODING_TYPE=encoding_type, RENDER_RES=args.render_res, INV_PROB = not args.no_inv_prob, WEIGHT_DECAY = args.weight_decay, BN = args.bn, ID = args.id, LAYERS = args.layers)
+                executor.submit(main, PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, LAMBDA_COST=args.lambda_cost, RUN_NAME=group_name, THRESHOLD=args.threshold, SIGMA=args.sigma, BATCH_SIZE=args.batch_size, LR=args.lr, ENCODING_TYPE=encoding_type, RENDER_RES=args.render_res, INV_PROB = not args.no_inv_prob, WEIGHT_DECAY = args.weight_decay, BN = args.bn, ID = args.id, LAYERS = args.layers, MASK_SIGMA = args.mask_sigma)
 

@@ -81,7 +81,8 @@ def main(NON_UNIFORM=False,
          INV_PROB = True,
          BN = True,
          ID = False,
-         LAYERS = 3, **kwargs) -> int:
+         LAYERS = 3,
+         MASK_SIGMA = 5., **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -129,7 +130,7 @@ def main(NON_UNIFORM=False,
     if CONTROLLER_TYPE == ControllerType.LearnableMask:
         mask_model_params = copy.deepcopy(model_params)
         mask_model_params.output_channels = 256
-        mask_model_params.std = SIGMA / 4
+        mask_model_params.std = MASK_SIGMA
         mask_model_params.use_id_encoding = True
 
         cmlp = encoding_controller.get_controlled_model(
