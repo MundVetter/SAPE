@@ -20,6 +20,7 @@ class ModelParams:
         self.hidden_dim = 256
         self.output_channels = 3
         self.use_id_encoding = False
+        self.bn = False
         self.fill_args(**kwargs)
 
 
@@ -28,13 +29,15 @@ class MLP(nn.Module):
     def forward(self, x: T) -> T:
         return self.model(x)
 
-    def __init__(self, layers: Union[List[int], Tuple[int, ...]]):
+    def __init__(self, layers: Union[List[int], Tuple[int, ...]], bn = False):
         super(MLP, self).__init__()
         layers_ = []
         for i in range(len(layers) - 1):
             layers_.append(nn.Linear(layers[i], layers[i + 1]))
             if i < len(layers) - 2:
                 layers_.append(nn.ReLU(True))
+                if bn:
+                    layers_.append(nn.BatchNorm1d(layers[i + 1]))
         self.model = nn.Sequential(*layers_)
 
 class Sin(nn.Module):
@@ -71,7 +74,7 @@ class EncodedMlpModel(nn.Module, abc.ABC):
 
     def get_mlp_model(self) -> nn.Module:
         dims = [self.encoding_dim] + self.opt.num_layers * [self.opt.hidden_dim] + [self.opt.output_channels]
-        return MLP(dims)
+        return MLP(dims, bn = self.opt.bn)
 
     def mlp_forward(self, x: T):
         return self.model(x)

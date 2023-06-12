@@ -78,7 +78,8 @@ def main(NON_UNIFORM=True,
          LR = 1e-3,
          THRESHOLD = 1,
          SIGMA = 20.,
-         INV_PROB = True, **kwargs) -> int:
+         INV_PROB = True,
+         BN = True, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -113,7 +114,7 @@ def main(NON_UNIFORM=True,
 
     # NEEDS TO BE CHANGED
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
-                                               hidden_dim=256, std=SIGMA, num_layers=2, use_id_encoding=True)
+                                               hidden_dim=256, std=SIGMA, num_layers=2, use_id_encoding=True, bn = BN)
 
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}"
     tag = f"{name}_{tag_without_filename}"
