@@ -114,7 +114,7 @@ def main(NON_UNIFORM=True,
 
     # NEEDS TO BE CHANGED
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
-                                               hidden_dim=256, std=SIGMA, num_layers=2, use_id_encoding=True, bn = BN)
+                                               hidden_dim=256, std=SIGMA, num_layers=2, use_id_encoding=False, bn = BN)
 
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}"
     tag = f"{name}_{tag_without_filename}"
@@ -126,6 +126,7 @@ def main(NON_UNIFORM=True,
         mask_model_params = copy.deepcopy(model_params)
         mask_model_params.output_channels = 256
         mask_model_params.std = SIGMA / 4
+        mask_model_params.use_id_encoding = True
 
         cmlp = encoding_controller.get_controlled_model(
             model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
