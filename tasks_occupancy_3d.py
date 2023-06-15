@@ -151,6 +151,10 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
             opt.zero_grad()
             if custom_train:
                 model.train_iter(vs, labels, logger)
+                if i % freq == 0:
+                    mask_size = encoding_models.mean_abs_weights(model.mask)
+                    main_size = encoding_models.mean_abs_weights(model.cmlp)
+                    wandb.log({'mask_size': mask_size, 'main_size': main_size})
             else:
                 out = model(vs)
                 loss_all = nnf.binary_cross_entropy_with_logits(out, labels, reduction='none')
