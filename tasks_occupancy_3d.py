@@ -219,7 +219,8 @@ def main(EPOCHS=10,
          BATCH_SIZE = 5000,
          RENDER_RES = 256,
          BN = False,
-         ID = False, **kwargs) -> int:
+         ID = False,
+         MASK_SIGMA = 1, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -237,6 +238,7 @@ def main(EPOCHS=10,
                 "sigma": SIGMA,
                 "bn": BN,
                 "use_id": ID,
+                "mask_sigma": MASK_SIGMA
             })
         wandb.run.log_code(".")
 
@@ -255,7 +257,7 @@ def main(EPOCHS=10,
     if CONTROLLER_TYPE == ControllerType.LearnableMask:
         mask_model_params = copy.deepcopy(model_params)
         mask_model_params.output_channels = 256
-        mask_model_params.std = SIGMA / 4
+        mask_model_params.std = MASK_SIGMA
 
         cmlp = encoding_controller.get_controlled_model(
             model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
