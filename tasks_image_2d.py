@@ -93,7 +93,7 @@ def main(NON_UNIFORM=False,
     if constants.DEBUG:
         wandb.init(mode="disabled")
     else:
-        wandb.init(project="2d_image_2",
+        wandb.init(project="2d_image_3",
                    group=RUN_NAME,
             config={
                 "non_uniform": NON_UNIFORM,
