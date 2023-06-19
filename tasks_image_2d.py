@@ -19,7 +19,6 @@ import wandb
 def optimize(encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controller.ControlParams, group, tag, out_path, device: D,
              freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None, compensate_inv_prob = False):
-    # TODO: change to original SAPE
     vs_base, vs_in, labels, target_image, image_labels, _, prob = group
     model_provided = True
     if model is None:
@@ -35,6 +34,9 @@ def optimize(encoding_type: EncodingType, model_params,
     opt = Optimizer(model.parameters(), lr=lr)
     logger = train_utils.Logger().start(control_params.num_iterations, tag=tag)
     files_utils.export_image(target_image, out_path / 'target.png')
+
+    lowest_loss = 9999
+    best_model = None
     for i in range(control_params.num_iterations):
         opt.zero_grad()
         if mask is None:
@@ -50,6 +52,10 @@ def optimize(encoding_type: EncodingType, model_params,
             loss_all[:, 1] *= inv_prob
             loss_all[:, 2] *= inv_prob
         loss = loss_all.mean()
+        if loss < lowest_loss:
+            lowest_loss = loss
+            best_model = copy.deepcopy(model)
+            wandb.log({'lowest_loss': lowest_loss})
         if i == 0:
             print(loss)
         loss.backward()
@@ -64,7 +70,7 @@ def optimize(encoding_type: EncodingType, model_params,
         logger.reset_iter()
     logger.stop()
 
-    return model
+    return best_model
 
 def main(NON_UNIFORM=False,
          EPOCHS=2,

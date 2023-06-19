@@ -340,13 +340,6 @@ class MaskModel(nn.Module):
 
     def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, weight_decay = 1, eval_labels = None, log = lambda *args, **kwargs: None):
         wandb.config.update({'weight_decay': weight_decay})
-        # optimizer = OptimizerW([{
-        #     'params': self.mask.parameters(),
-        #     'weight_decay': weight_decay
-        # }, {
-        #     'params': self.cmlp.parameters(),
-        #     'weight_decay': weight_decay
-        # }], lr=lr)
         optimizer = OptimizerW(self.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9998)
 
