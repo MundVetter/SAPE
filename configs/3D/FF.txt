@@ -1,0 +1,6 @@
+--weight_decay 0
+--controller_type NoControl
+--layers 8
+--n_epochs 3000
+--batch_size 1_000_000
+--sigma 12

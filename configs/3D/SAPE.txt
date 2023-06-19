@@ -1,0 +1,8 @@
+--id
+--weight_decay 0
+--mask_res 64
+--controller_type SpatialProgressionStashed
+--sigma 20
+--layers 8
+--n_epochs 3000
+--batch_size 1_000_000

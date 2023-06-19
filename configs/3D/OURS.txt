@@ -1,0 +1,6 @@
+--bn
+--weight_decay 1.
+--controller_type LearnableMask
+--layers 4
+--threshold 0
+--sigma 20
