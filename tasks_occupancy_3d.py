@@ -141,6 +141,7 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
     lr = 1e-4
     opt = Opt(model.parameters(), lr=lr, weight_decay=weight_decay)
     logger = train_utils.Logger().start(epochs, tag=f"{name} {tag}")
+    wandb.watch(model)
     for i in range(epochs):
         loss_train = 0
         for j in range(in_iters):
