@@ -4,4 +4,3 @@
 --layers 3
 --threshold 0
 --sigma 20
---mask_sigma 1
