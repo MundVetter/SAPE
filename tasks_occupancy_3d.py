@@ -220,7 +220,8 @@ def main(EPOCHS=10,
          RENDER_RES = 256,
          BN = False,
          ID = False,
-         MASK_SIGMA = 1, **kwargs) -> int:
+         MASK_SIGMA = 1,
+         LAYERS = 4, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -253,7 +254,7 @@ def main(EPOCHS=10,
     out_path = f'{constants.CHECKPOINTS_ROOT}/3d_occupancy/{name}/'
 
     model_params = encoding_models.ModelParams(domain_dim=3, output_channels=1, std=5., hidden_dim=256,
-                                                num_layers=4, num_frequencies=256, use_id_encoding=ID, bn = BN)
+                                                num_layers=LAYERS, num_frequencies=256, use_id_encoding=ID, bn = BN)
     if CONTROLLER_TYPE == ControllerType.LearnableMask:
         mask_model_params = copy.deepcopy(model_params)
         mask_model_params.output_channels = 256
