@@ -30,7 +30,7 @@ def parse_args():
     parser.add_argument("--mask_sigma", type=float, default=5.)
 
     parser.add_argument("--lambda_cost", type=float, default=0.1)
-    parser.add_argument("--threshold", type=float, default=1 - 1e-3)
+    parser.add_argument("--threshold", type=float, default=0)
     parser.add_argument("--sigma", type=float, default=20.)
     parser.add_argument("--bn", action="store_true")
     parser.add_argument("--id", action="store_true")

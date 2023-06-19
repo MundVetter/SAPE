@@ -1,0 +1,4 @@
+--weight_decay 0
+--controller_type NoControl
+--num_layers 6
+--sigma 10
