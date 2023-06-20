@@ -209,9 +209,16 @@ def model_eval(model, vs_in, get_mask=False):
             out_ = model(vs_in[i:i+batch_size], get_mask=False)
             out.append(out_)
         out = torch.cat(out, dim=0)
+
+        if get_mask:
+            return out, mask
+        else:
+            return out
     else:
-        out, mask = model(vs_in, get_mask=get_mask)
-    return out, mask
+        if get_mask:
+            return model(vs_in, get_mask=get_mask)
+        else:
+            return model(vs_in, get_mask=get_mask)
 
 
 

@@ -136,7 +136,7 @@ def main(NON_UNIFORM=True,
         vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
         if NON_UNIFORM and RENDER_RES == 8000:
-            group = init_source_target(image_path, name, scale=scale / 10,
+            group = init_source_target(image_path, name, scale=scale / 5,
                         max_res=RENDER_RES, square=False, non_uniform_sampling=False)
             vs_in = torch.cat([vs_in, group[1]], dim = 0)
             labels = torch.cat([labels, group[2]], dim = 0)
