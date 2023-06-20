@@ -142,7 +142,7 @@ def main(NON_UNIFORM=True,
             labels = torch.cat([labels, group[2]], dim = 0)
             vs_in_prob = torch.ones(vs_in.shape[0])
             extra_prob = torch.ones(group[1].shape[0]) * 10
-            prob = torch.cat([prob, extra_prob], dim = 0)
+            prob = torch.cat([vs_in_prob, extra_prob], dim = 0)
 
         # remove half of the vs_in and corresponding labels randomly
         indices = torch.randperm(vs_in.shape[0])[:vs_in.shape[0] // 2]
