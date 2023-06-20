@@ -236,7 +236,7 @@ def plot_image(model, vs_in: T, ref_image: ARRAY):
                 hm = image_utils.to_heatmap(hm)
                 hm = hm.view(*ref_image.shape[:-1], 3)
         else:
-            out = model_eval(model, vs_in, get_mask=True)
+            out = model_eval(model, vs_in, get_mask=False)
             hm = None
         out = out.view(ref_image.shape)
     model.train()
