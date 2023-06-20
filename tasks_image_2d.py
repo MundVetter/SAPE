@@ -125,9 +125,9 @@ def main(NON_UNIFORM=False,
     name = files_utils.split_path(PATH)[1]
 
     if RENDER_RES == 8000:
-        scale = 0.05
+        scale = 0.025
         if NON_UNIFORM:
-            scale /= 5
+            scale /= 10
     else:
         scale = .25
     if REMOVE_RANDOM:
