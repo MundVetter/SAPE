@@ -125,7 +125,7 @@ def main(NON_UNIFORM=False,
     name = files_utils.split_path(PATH)[1]
 
     if RENDER_RES == 8000:
-        scale = 0.05
+        scale = 0.025
     else:
         scale = .25
     if REMOVE_RANDOM:
@@ -144,7 +144,7 @@ def main(NON_UNIFORM=False,
         masked_image[full_indices[:, 0], full_indices[:, 1], :] = labels
     else:
         group = init_source_target(image_path, name, scale=scale,
-                                max_res=RENDER_RES, square=True, non_uniform_sampling=NON_UNIFORM)
+                                max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
         vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}_{scale}"
     tag = f"{name}_{tag_without_filename}"
