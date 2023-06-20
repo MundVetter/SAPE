@@ -141,7 +141,7 @@ def main(NON_UNIFORM=True,
             vs_in = torch.cat([vs_in, group[1]], dim = 0)
             labels = torch.cat([labels, group[2]], dim = 0)
             vs_in_prob = torch.ones(vs_in.shape[0])
-            extra_prob = torch.ones(group[1].shape[0]) * 0.1
+            extra_prob = torch.ones(group[1].shape[0]) * 0.01
             prob = torch.cat([vs_in_prob, extra_prob], dim = 0)
 
         # remove half of the vs_in and corresponding labels randomly
