@@ -352,7 +352,7 @@ class MaskModel(nn.Module):
             optimizer.step()
             scheduler.step()
 
-            if i % 100 == 0 and vs_base is not None:
+            if i % 500 == 0 and vs_base is not None:
                 log(self, image, out_path, tag, vs_base, self.device, i, labels = eval_labels)
                 wandb.log({'main model weights size': mean_abs_weights(self.cmlp), 'mask model weights size': mean_abs_weights(self.mask)})
             logger.reset_iter()

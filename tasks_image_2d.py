@@ -181,7 +181,7 @@ def main(NON_UNIFORM=False,
         control_params = encoding_controller.ControlParams(
         num_iterations=EPOCHS, epsilon=1e-3, res=MASK_RES)
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                         100, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB)
+                         500, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB)
 
     torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
 
