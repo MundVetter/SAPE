@@ -205,8 +205,8 @@ def model_eval(model, vs_in, get_mask=False):
         batch_size = 512
         for i in range(0, vs_in.shape[0], batch_size):
             out_, mask_ = model(vs_in[i:i+batch_size], get_mask=get_mask)
-            out.append(out_)
-            mask.append(mask_)
+            out.append(out_.cpu())
+            mask.append(mask_.cpu())
         out = torch.cat(out, dim=0)
         mask = torch.cat(mask, dim=0)
     else:
@@ -226,7 +226,7 @@ def plot_image(model, vs_in: T, ref_image: ARRAY):
             hm = image_utils.to_heatmap(hm)
             hm = hm.view(*ref_image.shape[:-1], 3)
         else:
-            out = model(vs_in, get_mask=True)
+            out = model_eval(vs_in, get_mask=True)
             hm = None
         out = out.view(ref_image.shape)
     model.train()

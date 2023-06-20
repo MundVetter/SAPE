@@ -74,7 +74,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
 def main(NON_UNIFORM=False,
          EPOCHS=2,
-         PATH="images/chibi.jpg",
+         PATH="pluto/pluto.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
@@ -89,7 +89,7 @@ def main(NON_UNIFORM=False,
          ID = False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
-         RENDER_RES = 512,
+         RENDER_RES = 8000,
          REMOVE_RANDOM = False, **kwargs) -> int:
 
     if constants.DEBUG:
