@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument("--bn", action="store_true")
     parser.add_argument("--id", action="store_true")
 
+    parser.add_argument("--remove_random", action="store_true")
 
     parser.add_argument("--render_res", type=int, default=256)
     parser.add_argument("--task", type=str, default="2d")
@@ -71,5 +72,5 @@ if __name__ == "__main__":
         for i in range(args.n_runs):
             group_name = str(uuid.uuid4())[:8]
             for file_name in file_names:
-                executor.submit(main, PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, LAMBDA_COST=args.lambda_cost, RUN_NAME=group_name, THRESHOLD=args.threshold, SIGMA=args.sigma, BATCH_SIZE=args.batch_size, LR=args.lr, ENCODING_TYPE=encoding_type, RENDER_RES=args.render_res, INV_PROB = not args.no_inv_prob, WEIGHT_DECAY = args.weight_decay, BN = args.bn, ID = args.id, LAYERS = args.layers, MASK_SIGMA = args.mask_sigma)
+                executor.submit(main, PATH=str(Path(args.folder_name) / file_name), CONTROLLER_TYPE=controller_type, EPOCHS=args.n_epochs, NON_UNIFORM = args.non_uniform, MASK_RES=args.mask_res, LAMBDA_COST=args.lambda_cost, RUN_NAME=group_name, THRESHOLD=args.threshold, SIGMA=args.sigma, BATCH_SIZE=args.batch_size, LR=args.lr, ENCODING_TYPE=encoding_type, RENDER_RES=args.render_res, INV_PROB = not args.no_inv_prob, WEIGHT_DECAY = args.weight_decay, BN = args.bn, ID = args.id, LAYERS = args.layers, MASK_SIGMA = args.mask_sigma, REMOVE_RANDOM = args.remove_random)
 

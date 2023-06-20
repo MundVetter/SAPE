@@ -88,7 +88,9 @@ def main(NON_UNIFORM=False,
          BN = True,
          ID = False,
          LAYERS = 3,
-         MASK_SIGMA = 5., **kwargs) -> int:
+         MASK_SIGMA = 5.,
+         RENDER_RES = 512,
+         REMOVE_RANDOM = False, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -109,7 +111,9 @@ def main(NON_UNIFORM=False,
                 "bn": BN,
                 "use_id": ID,
                 "layers": LAYERS,
-                "mask sigma": MASK_SIGMA
+                "mask sigma": MASK_SIGMA,
+                "render res": RENDER_RES,
+                "remove random": REMOVE_RANDOM
             })
         wandb.run.log_code(".")
 
@@ -120,16 +124,33 @@ def main(NON_UNIFORM=False,
     os.makedirs(constants.CHECKPOINTS_ROOT, exist_ok=True)
     name = files_utils.split_path(PATH)[1]
 
+
     scale = .25
-    group = init_source_target(image_path, name, scale=scale,
-                               max_res=512, square=False, non_uniform_sampling=NON_UNIFORM)
-    vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
+    if REMOVE_RANDOM:
+        scale *= 2
+        group = init_source_target(image_path, name, scale=scale,
+                        max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
+        vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
+
+        # remove half of the vs_in and corresponding labels randomly
+        indices = torch.randperm(vs_in.shape[0])[:vs_in.shape[0] // 2]
+        vs_in = vs_in[indices]
+        labels = labels[indices]
+
+        full_indices = ((vs_in + 1) * RENDER_RES // 2).long()
+        masked_image[:, :, :] = 1
+        masked_image[full_indices[:, 0], full_indices[:, 1], :] = labels
+    else:
+        group = init_source_target(image_path, name, scale=scale,
+                                max_res=RENDER_RES, square=True, non_uniform_sampling=NON_UNIFORM)
+        vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
+    tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}_{scale}"
+    tag = f"{name}_{tag_without_filename}"
+    # save masked image
+    files_utils.export_image(masked_image, constants.CHECKPOINTS_ROOT / '2d_images' / name / f'masked_{tag}.png')
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                                hidden_dim=256, std=SIGMA, num_layers=LAYERS, use_id_encoding=ID, bn = BN)
-
-    tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}"
-    tag = f"{name}_{tag_without_filename}"
 
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
     os.makedirs(out_path, exist_ok=True)

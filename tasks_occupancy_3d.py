@@ -114,7 +114,7 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
 
     # def export_heatmap():
     #     model.eval()
-    #     res = control_params.res
+    #     res = 128
     #     mask = model.mask.view(res, res, res, -1).sum(-1).float() / model.mask.shape[-1]
     #     mask = mask.view(1, 1, res, res, res)
     #     mask = nnf.interpolate(mask, mode='trilinear', scale_factor=256 // res, align_corners=True).squeeze()
@@ -156,6 +156,7 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
                     mask_size = encoding_models.mean_abs_weights(model.mask)
                     main_size = encoding_models.mean_abs_weights(model.cmlp)
                     wandb.log({'mask_size': mask_size, 'main_size': main_size})
+                    export_heatmap()
             else:
                 out = model(vs)
                 loss_all = nnf.binary_cross_entropy_with_logits(out, labels, reduction='none')
@@ -209,7 +210,7 @@ def evaluate(model, ds, batch_size = 5000):
 def main(EPOCHS=10,
          PATH="meshes/MalteseFalconSolid.stl",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.GlobalProgression,
+         CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 64,
          LAMBDA_COST = 0.1,
          WEIGHT_DECAY = 1,
