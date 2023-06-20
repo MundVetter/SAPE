@@ -198,6 +198,7 @@ def psnr(img1, img2, **_):
     return 20 * torch.log10(1.0 / torch.sqrt(mse))
 
 def model_eval(model, vs_in, get_mask=False):
+    mask = None
     if vs_in.shape[0] > 512:
         # loop in batches of 512 over the data
         out = []
