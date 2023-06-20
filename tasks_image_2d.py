@@ -95,7 +95,7 @@ def main(NON_UNIFORM=True,
     if constants.DEBUG:
         wandb.init(mode="disabled")
     else:
-        wandb.init(project="2d_image_3",
+        wandb.init(project="mask_sigma_sweep",
                    group=RUN_NAME,
             config={
                 "non_uniform": NON_UNIFORM,
@@ -131,12 +131,12 @@ def main(NON_UNIFORM=True,
     else:
         scale = .25
     if REMOVE_RANDOM:
-        group = init_source_target(image_path, name, scale=scale,
+        group = init_source_target(image_path, name, scale=scale*2,
                         max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
         vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
         # remove half of the vs_in and corresponding labels randomly
-        indices = torch.randperm(vs_in.shape[0])[:vs_in.shape[0] // 2]
+        indices = torch.randperm(vs_in.shape[0])[:vs_in.shape[0] // 4]
         vs_in = vs_in[indices]
         labels = labels[indices]
 
