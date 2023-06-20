@@ -407,8 +407,3 @@ class MaskModel(nn.Module):
             return out
 
 
-def evaluate(model, vs_in, labels, func = [], **kwargs):
-    model.eval()
-    with torch.no_grad():
-        out = model(vs_in)
-        return func(out, labels, **kwargs)

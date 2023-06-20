@@ -1,7 +1,7 @@
 import os
-from models.encoding_models import MaskModel, evaluate
+from models.encoding_models import MaskModel
 from utils.files_utils import save_results_to_csv
-from utils.image_utils import log_evaluation_progress, psnr, ssim
+from utils.image_utils import evaluate, log_evaluation_progress, psnr, ssim
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK']='1'
 
 from utils.image_utils import init_source_target
@@ -124,8 +124,10 @@ def main(NON_UNIFORM=False,
     os.makedirs(constants.CHECKPOINTS_ROOT, exist_ok=True)
     name = files_utils.split_path(PATH)[1]
 
-
-    scale = .25
+    if RENDER_RES == 8000:
+        scale = 0.05
+    else:
+        scale = .25
     if REMOVE_RANDOM:
         scale *= 2
         group = init_source_target(image_path, name, scale=scale,
@@ -185,7 +187,7 @@ def main(NON_UNIFORM=False,
 
     res_train = evaluate(model, vs_in.to(device), labels.to(device), psnr)
     res_test = evaluate(model, vs_base.to(device), image_labels.to(device), psnr)
-    res_test_ssim = evaluate(model, vs_base.to(device), image_labels.to(device), ssim, img_shape = [512, 512])
+    res_test_ssim = evaluate(model, vs_base.to(device), image_labels.to(device), ssim, img_shape = [RENDER_RES, RENDER_RES])
     res_masked = evaluate(model, masked_cords.to(device), masked_labels.to(device), psnr)
 
     print(f"TRAIN PSNR: {res_train}")

@@ -142,9 +142,10 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
         # Calculate probability for non-uniform sampling
         prob = torch.from_numpy(weight_map.reshape(-1)[select])
     else:
+        mul = int(1 / scale)
         indices = torch.arange(0, h * w)
-        select = indices[(indices % 2 == 0) & ((indices // w) % 2 == 0)]
-        masked = indices[(indices % 2 == 1) | ((indices // w) % 2 == 1)]
+        select = indices[(indices % mul == 0) & ((indices // w) % mul == 0)]
+        masked = indices[(indices % mul == 1) | ((indices // w) % mul == 1)]
 
         # Calculate probability for uniform sampling
         prob = torch.ones((1))
@@ -196,12 +197,29 @@ def psnr(img1, img2, **_):
     mse = torch.mean((img1 - img2) ** 2)
     return 20 * torch.log10(1.0 / torch.sqrt(mse))
 
+def model_eval(model, vs_in, get_mask=False):
+    if vs_in.shape[0] > 512:
+        # loop in batches of 512 over the data
+        out = []
+        mask = []
+        batch_size = 512
+        for i in range(0, vs_in.shape[0], batch_size):
+            out_, mask_ = model(vs_in[i:i+batch_size], get_mask=get_mask)
+            out.append(out_)
+            mask.append(mask_)
+        out = torch.cat(out, dim=0)
+        mask = torch.cat(mask, dim=0)
+    else:
+        out, mask = model(vs_in, get_mask=get_mask)
+    return out, mask
+
+
 
 def plot_image(model, vs_in: T, ref_image: ARRAY):
     model.eval()
     with torch.no_grad():
         if model.is_progressive:
-            out, mask = model(vs_in, get_mask=True)
+            out, mask = model_eval(model, vs_in, get_mask=True)
             if mask.dim() != out.dim():
                 mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
             hm = torch.abs(mask[:, 2:]).sum(1) / torch.abs(mask[:, 2:]).sum(1).max()
@@ -265,6 +283,13 @@ def ssim(img1, img2, img_shape=None, window_size=11, k1=0.01, k2=0.03, L=1.0, **
     ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
 
     return torch.mean(ssim_map)
+
+
+def evaluate(model, vs_in, labels, func = [], **kwargs):
+    model.eval()
+    with torch.no_grad():
+        out = model_eval(model, vs_in)
+        return func(out, labels, **kwargs)
 
 
 
