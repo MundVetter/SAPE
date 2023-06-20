@@ -205,7 +205,7 @@ def model_eval(model, vs_in, get_mask=False):
         batch_size = 512
         for i in range(0, vs_in.shape[0], batch_size):
             out_ = model(vs_in[i:i+batch_size], get_mask=False)
-            out.append(out_.cpu())
+            out.append(out_)
         out = torch.cat(out, dim=0)
     else:
         out, mask = model(vs_in, get_mask=get_mask)
