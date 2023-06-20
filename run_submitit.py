@@ -37,7 +37,7 @@ def parse_args():
 
     parser.add_argument("--remove_random", action="store_true")
 
-    parser.add_argument("--render_res", type=int, default=256)
+    parser.add_argument("--render_res", type=int, default=512)
     parser.add_argument("--task", type=str, default="2d")
 
     return parser.parse_args()
