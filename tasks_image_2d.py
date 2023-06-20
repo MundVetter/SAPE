@@ -151,11 +151,11 @@ def main(NON_UNIFORM=True,
     if NON_UNIFORM and RENDER_RES == 8000:
         group = init_source_target(image_path, name, scale=scale,
                     max_res=RENDER_RES, square=False, non_uniform_sampling=False)
-        vs_in_prob = torch.ones(vs_in.shape[0])
+        # vs_in_prob = torch.ones(vs_in.shape[0])
         vs_in = torch.cat([vs_in, group[1]], dim = 0)
         labels = torch.cat([labels, group[2]], dim = 0)
-        extra_prob = torch.ones(group[1].shape[0]) * 0.01
-        prob = torch.cat([vs_in_prob, extra_prob], dim = 0)
+        extra_prob = torch.ones(group[1].shape[0]) * torch.mean(prob)
+        prob = torch.cat([prob, extra_prob], dim = 0)
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}_{scale}"
     tag = f"{name}_{tag_without_filename}"
     # save masked image
