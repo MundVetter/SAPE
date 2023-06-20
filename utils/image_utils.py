@@ -201,16 +201,11 @@ def model_eval(model, vs_in, get_mask=False):
     if vs_in.shape[0] > 512:
         # loop in batches of 512 over the data
         out = []
-        mask = []
         batch_size = 512
         for i in range(0, vs_in.shape[0], batch_size):
-            out_, mask_ = model(vs_in[i:i+batch_size], get_mask=get_mask)
+            out_ = model(vs_in[i:i+batch_size], get_mask=False)
             out.append(out_.cpu())
-            if get_mask:
-                mask.append(mask_[:, 0].cpu())
         out = torch.cat(out, dim=0)
-        if get_mask:
-            mask = torch.cat(mask, dim=0)
     else:
         out, mask = model(vs_in, get_mask=get_mask)
     return out, mask
@@ -222,11 +217,14 @@ def plot_image(model, vs_in: T, ref_image: ARRAY):
     with torch.no_grad():
         if model.is_progressive:
             out, mask = model_eval(model, vs_in, get_mask=True)
-            if mask.dim() != out.dim():
-                mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
-            hm = torch.abs(mask[:, :]).sum(1) / torch.abs(mask[:, :]).sum(1).max()
-            hm = image_utils.to_heatmap(hm)
-            hm = hm.view(*ref_image.shape[:-1], 3)
+            if vs_in.shape[0] > 512:
+                hm = None
+            else:
+                if mask.dim() != out.dim():
+                    mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
+                hm = torch.abs(mask[:, :]).sum(1) / torch.abs(mask[:, :]).sum(1).max()
+                hm = image_utils.to_heatmap(hm)
+                hm = hm.view(*ref_image.shape[:-1], 3)
         else:
             out = model_eval(vs_in, get_mask=True)
             hm = None
