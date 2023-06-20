@@ -125,11 +125,12 @@ def main(NON_UNIFORM=False,
     name = files_utils.split_path(PATH)[1]
 
     if RENDER_RES == 8000:
-        scale = 0.025
+        scale = 0.05
+        if NON_UNIFORM:
+            scale /= 5
     else:
         scale = .25
     if REMOVE_RANDOM:
-        scale *= 2
         group = init_source_target(image_path, name, scale=scale,
                         max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
         vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
