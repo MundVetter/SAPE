@@ -199,7 +199,7 @@ def psnr(img1, img2, **_):
 
 def model_eval(model, vs_in, get_mask=False):
     mask = None
-    if vs_in.shape[0] > 512:
+    if vs_in.shape[0] > 512 * 512:
         # loop in batches of 512 over the data
         out = []
         batch_size = 512 * 512
@@ -220,7 +220,7 @@ def plot_image(model, vs_in: T, ref_image: ARRAY):
     with torch.no_grad():   
         if model.is_progressive:
             out, mask = model_eval(model, vs_in, get_mask=True)
-            if vs_in.shape[0] > 512:
+            if vs_in.shape[0] > 512 * 512:
                 hm = None
             else:
                 if mask.dim() != out.dim():
