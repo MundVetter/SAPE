@@ -202,8 +202,10 @@ def model_eval(model, vs_in, get_mask=False):
     if vs_in.shape[0] > 512:
         # loop in batches of 512 over the data
         out = []
-        batch_size = 512
+        batch_size = 512 * 512
         for i in range(0, vs_in.shape[0], batch_size):
+            if i + batch_size > vs_in.shape[0]:
+                batch_size = vs_in.shape[0] - i
             out_ = model(vs_in[i:i+batch_size], get_mask=False)
             out.append(out_)
         out = torch.cat(out, dim=0)
@@ -215,7 +217,7 @@ def model_eval(model, vs_in, get_mask=False):
 
 def plot_image(model, vs_in: T, ref_image: ARRAY):
     model.eval()
-    with torch.no_grad():
+    with torch.no_grad():   
         if model.is_progressive:
             out, mask = model_eval(model, vs_in, get_mask=True)
             if vs_in.shape[0] > 512:
