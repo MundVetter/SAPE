@@ -72,7 +72,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return best_model
 
-def main(NON_UNIFORM=False,
+def main(NON_UNIFORM=True,
          EPOCHS=2,
          PATH="pluto/pluto.jpg",
          ENCODING_TYPE = EncodingType.FF,
@@ -134,6 +134,12 @@ def main(NON_UNIFORM=False,
         group = init_source_target(image_path, name, scale=scale,
                         max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
         vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
+
+        if NON_UNIFORM and RENDER_RES == 8000:
+            group = init_source_target(image_path, name, scale=scale / 10,
+                        max_res=RENDER_RES, square=False, non_uniform_sampling=False)
+            vs_in = torch.cat([vs_in, group[1]], dim = 0)
+            labels = torch.cat([labels, group[2]], dim = 0)
 
         # remove half of the vs_in and corresponding labels randomly
         indices = torch.randperm(vs_in.shape[0])[:vs_in.shape[0] // 2]
