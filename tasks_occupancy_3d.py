@@ -270,7 +270,7 @@ def main(EPOCHS=10,
         model = encoding_models.MaskModel(mask_model, cmlp, lambda_cost=LAMBDA_COST, mask_act=torch.erf, threshold = THRESHOLD, loss= nnf.binary_cross_entropy_with_logits, bn = BN)
         model = optimize(ds, device = device, freq = 50, verbose=True, tag = tag, out_path = out_path, model = model, Opt = OptimizerW, weight_decay = WEIGHT_DECAY, custom_train = True, epochs = EPOCHS, batch_size = BATCH_SIZE, render_res=RENDER_RES)
     else:
-        control_params = encoding_controller.ControlParams(num_iterations=500, epsilon=1e-1, res=MASK_RES)
+        control_params = encoding_controller.ControlParams(num_iterations=500, epsilon=1e-2, res=MASK_RES)
         model = optimize(ds, encoding_type=ENCODING_TYPE, model_params=model_params, controller_type=CONTROLLER_TYPE, control_params=control_params, device=device, freq=50, verbose=True, tag=tag, out_path=out_path, epochs=EPOCHS, batch_size=BATCH_SIZE, render_res=RENDER_RES)
 
     ds_eval = MeshSampler(mesh_path, device)
