@@ -354,7 +354,7 @@ class SpatialFixedController(ProgressiveEncoderController):
             else:
                 mask = self.interpolate(x)
         out = self.model(x, override_mask=mask)
-        if 'get_mask' in kwargs:
+        if 'get_mask' in kwargs and kwargs['get_mask']:
             return out, mask
         return out
 
