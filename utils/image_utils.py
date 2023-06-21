@@ -215,7 +215,10 @@ def model_eval(model, vs_in, get_mask=False):
         else:
             return out
     else:
-        return model(vs_in, get_mask=get_mask)
+        if get_mask:
+            return model(vs_in, get_mask=get_mask)
+        else:
+            return model(vs_in)
 
 
 
