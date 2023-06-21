@@ -145,7 +145,7 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
         mul = int(1 / (scale*2))
         indices = torch.arange(0, h * w)
         select = indices[(indices % mul == 0) & ((indices // w) % mul == 0)]
-        masked = indices[(indices % mul == 1) | ((indices // w) % mul == 1)]
+        masked = indices[(indices % mul != 0) | ((indices // w) % mul != 0)]
 
         # Calculate probability for uniform sampling
         prob = torch.ones((1))

@@ -90,7 +90,7 @@ def main(NON_UNIFORM=False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
          RENDER_RES = 512,
-         REMOVE_RANDOM = True, **kwargs) -> int:
+         REMOVE_RANDOM = False, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -139,6 +139,9 @@ def main(NON_UNIFORM=False,
         indices = torch.randperm(vs_base.shape[0])[:vs_base.shape[0] // 4]
         vs_in = vs_base[indices]
         labels = image_labels[indices]
+
+        masked_cords = vs_base[~indices]
+        masked_labels = image_labels[~indices]
 
         masked_image = image_labels.clone()
         masked_image[~indices] = 1
