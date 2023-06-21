@@ -72,9 +72,9 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return best_model
 
-def main(NON_UNIFORM=True,
+def main(NON_UNIFORM=False,
          EPOCHS=2,
-         PATH="pluto/pluto.jpg",
+         PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
@@ -89,8 +89,8 @@ def main(NON_UNIFORM=True,
          ID = False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
-         RENDER_RES = 8000,
-         REMOVE_RANDOM = False, **kwargs) -> int:
+         RENDER_RES = 512,
+         REMOVE_RANDOM = True, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -136,13 +136,13 @@ def main(NON_UNIFORM=True,
         vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
         # remove half of the vs_in and corresponding labels randomly
-        indices = torch.randperm(vs_in.shape[0])[:vs_in.shape[0] // 4]
-        vs_in = vs_in[indices]
-        labels = labels[indices]
+        indices = torch.randperm(vs_base.shape[0])[:vs_base.shape[0] // 4]
+        vs_in = vs_base[indices]
+        labels = image_labels[indices]
 
-        full_indices = ((vs_in + 1) * RENDER_RES // 2).long()
-        masked_image[:, :, :] = 1
-        masked_image[full_indices[:, 0], full_indices[:, 1], :] = labels
+        masked_image = image_labels.clone()
+        masked_image[~indices] = 1
+        masked_image = masked_image.view(RENDER_RES, RENDER_RES, -1)
     else:
         group = init_source_target(image_path, name, scale=scale,
                                 max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
