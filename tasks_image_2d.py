@@ -149,6 +149,7 @@ def main(NON_UNIFORM=False,
     tag = f"{name}_{tag_without_filename}"
     # save masked image
     files_utils.export_image(masked_image, constants.CHECKPOINTS_ROOT / '2d_images' / name / f'masked_{tag}.png')
+    wandb.log({"masked_image": wandb.Image(masked_image)})
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                                hidden_dim=256, std=SIGMA, num_layers=LAYERS, use_id_encoding=ID, bn = BN)
