@@ -72,7 +72,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return best_model
 
-def main(NON_UNIFORM=False,
+def main(NON_UNIFORM=True,
          EPOCHS=2,
          PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,

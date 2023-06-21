@@ -129,9 +129,19 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
         split = (h * w) // int(scale ** 2)
 
     if non_uniform_sampling:
-        grayscale = np.dot(image[...,:3], [0.2989, 0.5870, 0.1140])
-        edge_map = np.abs(scipy.ndimage.filters.laplace(grayscale))
-        weight_map = edge_map / edge_map.sum()
+        if scale == -1:
+            split = int(h * w * 0.25)
+
+            # Generate the 2D Gaussian weight map
+            x, y = np.meshgrid(np.linspace(-1,1,w), np.linspace(-1,1,h))
+            d = np.sqrt(x*x + y*y)
+            sigma, mu = 0.5, 0.0
+            gaussian_weight_map = np.exp(-( (d-mu)**2 / ( 2.0 * sigma**2 ) ) )
+            weight_map = gaussian_weight_map / gaussian_weight_map.sum()
+        else:
+            grayscale = np.dot(image[...,:3], [0.2989, 0.5870, 0.1140])
+            edge_map = np.abs(scipy.ndimage.filters.laplace(grayscale))
+            weight_map = edge_map / edge_map.sum()
 
         select = np.random.choice(a=h * w, size=split, replace=False, p=weight_map.reshape(-1))
         select = torch.from_numpy(select).long()
