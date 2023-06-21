@@ -131,31 +131,11 @@ def main(NON_UNIFORM=False,
     else:
         scale = .25
     if REMOVE_RANDOM:
-        group = init_source_target(image_path, name, scale=scale*2,
-                        max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
-        vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
+        scale = -1
 
-        # remove half of the vs_in and corresponding labels randomly
-        indices = torch.randperm(vs_base.shape[0])[:vs_base.shape[0] // 4]
-        vs_in = vs_base[indices]
-        labels = image_labels[indices]
-
-
-        masked = torch.ones(RENDER_RES*RENDER_RES, dtype = torch.bool)
-        masked[indices] = 0
-        masked = torch.nonzero(masked).squeeze(-1)
-
-        masked_cords = vs_base[masked]
-        masked_labels = image_labels[masked]
-
-
-        masked_image = image_labels.clone()
-        masked_image[masked] = 1
-        masked_image = masked_image.view(RENDER_RES, RENDER_RES, -1)
-    else:
-        group = init_source_target(image_path, name, scale=scale,
-                                max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
-        vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
+    group = init_source_target(image_path, name, scale=scale,
+                            max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
+    vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     if NON_UNIFORM and RENDER_RES == 8000:
         group = init_source_target(image_path, name, scale=scale,
