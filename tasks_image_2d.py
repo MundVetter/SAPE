@@ -90,12 +90,12 @@ def main(NON_UNIFORM=False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
          RENDER_RES = 512,
-         REMOVE_RANDOM = False, **kwargs) -> int:
+         REMOVE_RANDOM = True, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
     else:
-        wandb.init(project="mask_sigma_sweep",
+        wandb.init(project="2d_regres",
                    group=RUN_NAME,
             config={
                 "non_uniform": NON_UNIFORM,
@@ -140,11 +140,17 @@ def main(NON_UNIFORM=False,
         vs_in = vs_base[indices]
         labels = image_labels[indices]
 
-        masked_cords = vs_base[~indices]
-        masked_labels = image_labels[~indices]
+
+        masked = torch.ones(RENDER_RES*RENDER_RES, dtype = torch.bool)
+        masked[indices] = 0
+        masked = torch.nonzero(masked).squeeze(-1)
+
+        masked_cords = vs_base[masked]
+        masked_labels = image_labels[masked]
+
 
         masked_image = image_labels.clone()
-        masked_image[~indices] = 1
+        masked_image[masked] = 1
         masked_image = masked_image.view(RENDER_RES, RENDER_RES, -1)
     else:
         group = init_source_target(image_path, name, scale=scale,
