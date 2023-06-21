@@ -1,0 +1,6 @@
+--weight_decay 1.
+--controller_type LearnableMask
+--layers 3
+--threshold 0
+--sigma 20
+--mask_sigma 1
