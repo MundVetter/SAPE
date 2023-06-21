@@ -12,7 +12,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--partition", type=str, default="gpu")
     parser.add_argument("--n_runs", type=int, default=1)
-    parser.add_argument("--array_parallelism", ty   pe=int, default=8)
+    parser.add_argument("--array_parallelism", type=int, default=8)
     parser.add_argument("--controller_type", type=str, default="SpatialProgressionStashed")
     parser.add_argument("--encoding_type", type=str, default="FF")
     parser.add_argument("--n_epochs", type=int, default=1)
