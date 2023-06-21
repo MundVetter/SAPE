@@ -129,13 +129,13 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
         split = (h * w) // int(scale ** 2)
 
     if non_uniform_sampling:
-        if scale == -1:
+        if scale == -2:
             split = int(h * w * 0.25)
 
             # Generate the 2D Gaussian weight map
             x, y = np.meshgrid(np.linspace(-1,1,w), np.linspace(-1,1,h))
             d = np.sqrt(x*x + y*y)
-            sigma, mu = 0.5, 0.0
+            sigma, mu = 0.3, 0.0
             gaussian_weight_map = np.exp(-( (d-mu)**2 / ( 2.0 * sigma**2 ) ) )
             weight_map = gaussian_weight_map / gaussian_weight_map.sum()
         else:
@@ -152,7 +152,7 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
         # Calculate probability for non-uniform sampling
         prob = torch.from_numpy(weight_map.reshape(-1)[select])
     else:
-        if scale == -1:
+        if scale == -2:
             split = int(h * w * 0.25)
             select = torch.rand(h * w).argsort()
             masked = select[split:]
