@@ -5,3 +5,4 @@
 --threshold 0
 --sigma 20
 --mask_sigma 1
+--lambda_cost 0.01
