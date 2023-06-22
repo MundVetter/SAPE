@@ -131,7 +131,7 @@ def main(NON_UNIFORM=True,
     else:
         scale = .25
     if REMOVE_RANDOM:
-        scale = -2
+        scale = -1
 
     group = init_source_target(image_path, name, scale=scale,
                             max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
