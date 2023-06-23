@@ -74,7 +74,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
 def main(NON_UNIFORM=True,
          EPOCHS=2,
-         PATH="images/chibi.jpg",
+         PATH="pluto/pluto.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.NoControl,
          MASK_RES = 512,
@@ -89,7 +89,7 @@ def main(NON_UNIFORM=True,
          ID = False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
-         RENDER_RES = 512,
+         RENDER_RES = 8000,
          REMOVE_RANDOM = True, **kwargs) -> int:
 
     if constants.DEBUG:
@@ -131,20 +131,12 @@ def main(NON_UNIFORM=True,
     else:
         scale = .25
     if REMOVE_RANDOM:
-        scale = -2
+        scale = -1
 
     group = init_source_target(image_path, name, scale=scale,
                             max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
-    if NON_UNIFORM and RENDER_RES == 8000:
-        group = init_source_target(image_path, name, scale=scale,
-                    max_res=RENDER_RES, square=False, non_uniform_sampling=False)
-        # vs_in_prob = torch.ones(vs_in.shape[0])
-        vs_in = torch.cat([vs_in, group[1]], dim = 0)
-        labels = torch.cat([labels, group[2]], dim = 0)
-        extra_prob = torch.ones(group[1].shape[0]) * torch.mean(prob)
-        prob = torch.cat([prob, extra_prob], dim = 0)
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}_{scale}"
     tag = f"{name}_{tag_without_filename}"
     # save masked image
