@@ -4,7 +4,7 @@ from utils.files_utils import save_results_to_csv
 from utils.image_utils import evaluate, log_evaluation_progress, psnr, ssim
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK']='1'
 
-from utils.image_utils import init_source_target
+from utils.image_utils import init_source_target, unroll_domain, plot_image
 from custom_types import *
 from models import encoding_controller, encoding_models
 from utils import files_utils, train_utils
@@ -74,7 +74,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
 def main(NON_UNIFORM=True,
          EPOCHS=2,
-         PATH="pluto/pluto.jpg",
+         PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.NoControl,
          MASK_RES = 512,
@@ -89,8 +89,8 @@ def main(NON_UNIFORM=True,
          ID = False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
-         RENDER_RES = 8000,
-         REMOVE_RANDOM = True, **kwargs) -> int:
+         RENDER_RES = 1024,
+         REMOVE_RANDOM = False, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -134,7 +134,7 @@ def main(NON_UNIFORM=True,
         scale = -2
 
     group = init_source_target(image_path, name, scale=scale,
-                            max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
+                            max_res=512, square=False, non_uniform_sampling=NON_UNIFORM)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}_{scale}"
@@ -195,6 +195,12 @@ def main(NON_UNIFORM=True,
         ("test_ssim", res_test_ssim), 
         ("test_masked", res_masked)
     ], out_path, tag_without_filename)
+
+    # plot a big version of the image
+    larger_vs_base = unroll_domain(RENDER_RES, RENDER_RES).view(-1, 2).to(device)
+    large_image, _ = plot_image(model, larger_vs_base, np.array([RENDER_RES, RENDER_RES, 3]))
+    files_utils.export_image(large_image, out_path / f'large_{tag}.png')
+    wandb.log({"large_image": wandb.Image(str(out_path / f'large_{tag}.png'))})
 
     return 0
 

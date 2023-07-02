@@ -195,7 +195,8 @@ def init_source_target(path: Union[ARRAY, str], name: str, max_res: int, scale: 
         image = image[:, :, :1]
     if square:
         image = crop_square(image)
-    image = resize(image, max_res)
+    if max_res < image.shape[0] or max_res < image.shape[1]:
+        image = resize(image, max_res)
     h, w, c = image.shape
     cache_path = constants.RAW_IMAGES / 'cache' / f'{name}_{scale}_{non_uniform_sampling}.pkl'
 
@@ -240,21 +241,22 @@ def model_eval(model, vs_in, get_mask=False):
 
 def plot_image(model, vs_in: T, ref_image: ARRAY):
     model.eval()
+    shape = ref_image if ref_image.ndim == 1 else ref_image.shape
     with torch.no_grad():   
         if model.is_progressive:
             out, mask = model_eval(model, vs_in, get_mask=True)
-            if vs_in.shape[0] > 512 * 512:
+            if shape > 512 * 512:
                 hm = None
             else:
                 if mask.dim() != out.dim():
                     mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
                 hm = torch.abs(mask[:, :]).sum(1) / torch.abs(mask[:, :]).sum(1).max()
                 hm = image_utils.to_heatmap(hm)
-                hm = hm.view(*ref_image.shape[:-1], 3)
+                hm = hm.view(*shape[:-1], 3)
         else:
             out = model_eval(model, vs_in, get_mask=False)
             hm = None
-        out = out.view(ref_image.shape)
+        out = out.view(tuple(shape))
     model.train()
 
     return out, hm
