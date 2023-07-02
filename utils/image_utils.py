@@ -245,7 +245,7 @@ def plot_image(model, vs_in: T, ref_image: ARRAY):
     with torch.no_grad():   
         if model.is_progressive:
             out, mask = model_eval(model, vs_in, get_mask=True)
-            if shape > 512 * 512:
+            if vs_in.shape[0] > 512 * 512:
                 hm = None
             else:
                 if mask.dim() != out.dim():
