@@ -73,12 +73,12 @@ def optimize(encoding_type: EncodingType, model_params,
     return best_model
 
 def main(NON_UNIFORM=True,
-         EPOCHS=2,
+         EPOCHS=8000,
          PATH="images/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.NoControl,
+         CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
-         LAMBDA_COST = 0.1,
+         LAMBDA_COST = 0.01,
          WEIGHT_DECAY = 1,
          RUN_NAME=None,
          LR = 1e-3,
@@ -158,11 +158,14 @@ def main(NON_UNIFORM=True,
         cmlp = encoding_controller.get_controlled_model(
             model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
         
-    
-        mask_model = encoding_controller.get_controlled_model(
+        mask_model1 = encoding_controller.get_controlled_model(
+            mask_model_params, encoding_models.EncodingType.NoEnc, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
+        mask_model2 = encoding_controller.get_controlled_model(
             mask_model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
+        
+        mask_models = nn.ModuleList([mask_model1, mask_model2])
 
-        model = MaskModel(mask_model, cmlp, prob,
+        model = MaskModel(mask_models, cmlp, prob,
                             lambda_cost=LAMBDA_COST, mask_act=nnf.relu, threshold = THRESHOLD, compensate_inv_prob=INV_PROB, bn = BN)
         wandb.watch(model)
         mask = model.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,

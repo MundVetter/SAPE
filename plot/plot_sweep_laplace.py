@@ -3,9 +3,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Use Seaborn styles for a more professional look
-sns.set()
+sns.set_style("whitegrid")
 
-# data
+# read data from string
+from io import StringIO
+
 data = """
 sigma,TEST_psnr,TEST_min,TEST_max,TRAIN_psnr,TRAIN_min,TRAIN_max
 0.5,26.51,20.86,34.37,25.99,22.3,29.11
@@ -28,22 +30,23 @@ sigma,TEST_psnr,TEST_min,TEST_max,TRAIN_psnr,TRAIN_min,TRAIN_max
 # 40,19.79,15.44,26.76,48.48,46.92,51.02
 # """
 
-# read data from string
-from io import StringIO
 df = pd.read_csv(StringIO(data))
+
+# Define colors as RGB tuples
+keynote_blue = (0/255, 118/255, 186/255)
+keynote_orange = (254/255, 174/255, 0/255)
 
 # plot data
 fig, ax = plt.subplots()
 
 # plot TEST and TRAIN data with error bars
-for mode, color in zip(['TEST', 'TRAIN'], ['blue', 'orange']):
+for mode, color in zip(['TEST', 'TRAIN'], [keynote_blue, keynote_orange]):
     ax.plot(df['sigma'], df[f'{mode}_psnr'], label=mode, color=color, marker='o')
     ax.fill_between(df['sigma'], df[f'{mode}_min'], df[f'{mode}_max'], color=color, alpha=0.2)
 
 # Set title and labels for axes
 ax.set_xlabel('Mask $\sigma$', fontsize=14)
 ax.set_ylabel('PSNR', fontsize=14)
-ax.set_title('Laplace', fontsize=16)
 
 # Add a grid
 ax.grid(True)

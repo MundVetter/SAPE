@@ -89,7 +89,7 @@ class EncodedMlpModel(nn.Module, abc.ABC):
 
     def forward(self, x: T, *args, **kwargs) -> T:
         base_code = self.get_encoding(x)
-        if 'override_mask' in kwargs:
+        if 'override_mask' in kwargs and kwargs['override_mask'] is not None:
             base_code = base_code * kwargs['override_mask']
         out = self.mlp_forward(base_code)
         return out
@@ -309,13 +309,12 @@ def mean_abs_weights(model):
     mean_val = total_sum / total_num if total_num > 0 else 0
     return mean_val
 
-
 class MaskModel(nn.Module):
-    def __init__(self, mask_model, cmlp, prob = torch.tensor([1]), lambda_cost=0.01, mask_act = lambda x: x, loss = nnf.mse_loss, threshold = 0, compensate_inv_prob = False, bn = False):
+    def __init__(self, mask_models, cmlp, prob = torch.tensor([1]), lambda_cost=0.01, mask_act = lambda x: x, loss = nnf.mse_loss, threshold = 0, compensate_inv_prob = False, bn = False):
         super().__init__()
         self.is_progressive = True
 
-        self.mask = mask_model
+        self.masks = mask_models
         self.cmlp = cmlp
         self.mask_act = mask_act
         self.loss = loss
@@ -323,7 +322,7 @@ class MaskModel(nn.Module):
         self.lambda_cost = lambda_cost
         self.encoding_dim = cmlp.encoding_dim
         self.weight_tensor = (cmlp.model.encode.frequencies**2).sum(0)**0.5 - threshold
-        self.device = next(self.mask.parameters()).device
+        self.device = next(self.masks[0].parameters()).device
         self.best_model = None
         self.lowest_loss = 9999
         self.bn = bn
@@ -354,7 +353,9 @@ class MaskModel(nn.Module):
 
             if i % 500 == 0 and vs_base is not None:
                 log(self, image, out_path, tag, vs_base, self.device, i, labels = eval_labels)
-                wandb.log({'main model weights size': mean_abs_weights(self.cmlp), 'mask model weights size': mean_abs_weights(self.mask)})
+                wandb.log({'main model weights size': mean_abs_weights(self.cmlp)})
+                for j, mask in enumerate(self.masks):
+                    wandb.log({f'mask{j} weights size': mean_abs_weights(mask)})
             logger.reset_iter()
         logger.stop()
 
@@ -392,17 +393,33 @@ class MaskModel(nn.Module):
         return mask_original
 
     def forward(self, vs_in, get_mask = False):
-        mask_original = self.mask_act(self.mask(vs_in))
-        if self.bn:
-            mask_original = self.batch_norm(mask_original)
+        mask_sum = None
+        previous_mask = None
+        for i, mask in enumerate(self.masks):
+            mask_original = self.mask_act(mask(vs_in, override_mask=previous_mask))
+            if self.bn:
+                mask_original = self.batch_norm(mask_original)
 
-        mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
-        ones = torch.ones((vs_in.shape[0], self.cmlp.model.model.model[0].in_features - mask.shape[1]), device=vs_in.device)
-        mask = torch.cat([ones, mask], dim=-1)
+            mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
+            
+            if i == len(self.masks) - 1:
+                in_features = self.cmlp.model.model.model[0].in_features
+            else:
+                in_features = self.masks[i+1].model.model.model[0].in_features
+            
+            ones = torch.ones((vs_in.shape[0], in_features - mask.shape[1]), device=vs_in.device)
+            mask = torch.cat([ones, mask], dim=-1)
+            previous_mask = mask
+
+            if mask_sum is None:
+                mask_sum = mask_original
+            else:
+                mask_sum += mask_original
+
         out = self.cmlp(vs_in, override_mask=mask)
 
         if get_mask:
-            return out, mask_original
+            return out, mask_sum
         else:
             return out
 
