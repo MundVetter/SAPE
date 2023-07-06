@@ -412,7 +412,7 @@ class MaskModel(nn.Module):
             previous_mask = mask
 
             if mask_sum is None:
-                mask_sum = torch.abs(mask_original)
+                mask_sum = torch.abs(mask_original) * 0.1
             else:
                 mask_sum += torch.abs(mask_original)
 
