@@ -321,7 +321,7 @@ class MaskModel(nn.Module):
 
         self.lambda_cost = lambda_cost
         self.encoding_dim = cmlp.encoding_dim
-        self.weight_tensor = (cmlp.model.encode.frequencies**2).sum(0)**0.5 - threshold
+        self.weight_tensor = (cmlp.model.encode.frequencies**2).sum(0)**0.5
         self.device = next(self.masks[0].parameters()).device
         self.best_model = None
         self.lowest_loss = 9999
@@ -340,7 +340,7 @@ class MaskModel(nn.Module):
     def fit(self, vs_in, labels, image, out_path, tag, num_iterations=1000, vs_base=None, lr = 1e-3, weight_decay = 1, eval_labels = None, log = lambda *args, **kwargs: None):
         wandb.config.update({'weight_decay': weight_decay})
         optimizer = OptimizerW(self.parameters(), lr=lr, weight_decay=weight_decay)
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9997)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9998)
 
         logger = train_utils.Logger().start(num_iterations)
         vs_in, labels = vs_in.to(self.device), labels.to(self.device)
@@ -372,7 +372,7 @@ class MaskModel(nn.Module):
         mse_loss = mse_loss.mean()
 
         # Multiply the mask with the weight tensor before calculating the cost
-        weighted_mask = torch.abs(mask_original) * self.weight_tensor
+        weighted_mask = torch.abs(mask_original) * 1
         weighted_mask = weighted_mask.mean(1) * self.inv_prob
 
         mask_cost = self.lambda_cost * weighted_mask.mean()
@@ -412,9 +412,9 @@ class MaskModel(nn.Module):
             previous_mask = mask
 
             if mask_sum is None:
-                mask_sum = torch.abs(mask_original) * 0.1
+                mask_sum = torch.abs(mask_original) * (self.masks[1].model.encode.frequencies**2).sum(0)**0.5
             else:
-                mask_sum += torch.abs(mask_original)
+                mask_sum += torch.abs(mask_original) * self.weight_tensor
 
         out = self.cmlp(vs_in, override_mask=mask)
 
