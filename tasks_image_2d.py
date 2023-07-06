@@ -150,18 +150,23 @@ def main(NON_UNIFORM=True,
     os.makedirs(out_path, exist_ok=True)
 
     if CONTROLLER_TYPE == ControllerType.LearnableMask:
-        mask_model_params = copy.deepcopy(model_params)
-        mask_model_params.output_channels = 256
-        mask_model_params.std = MASK_SIGMA
-        mask_model_params.use_id_encoding = True
+        mask_model_params_1 = copy.deepcopy(model_params)
+        mask_model_params_1.output_channels = 256
+        mask_model_params_1.std = 1
+        mask_model_params_1.use_id_encoding = True
+
+        mask_model_params_2 = copy.deepcopy(model_params)
+        mask_model_params_2.output_channels = 256
+        mask_model_params_2.std = 5
+        mask_model_params_2.use_id_encoding = False
 
         cmlp = encoding_controller.get_controlled_model(
             model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
         
         mask_model1 = encoding_controller.get_controlled_model(
-            mask_model_params, encoding_models.EncodingType.NoEnc, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
+            mask_model_params_1, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
         mask_model2 = encoding_controller.get_controlled_model(
-            mask_model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
+            mask_model_params_2, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
         
         mask_models = nn.ModuleList([mask_model1, mask_model2])
 
