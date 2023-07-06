@@ -327,7 +327,7 @@ class MaskModel(nn.Module):
         self.lowest_loss = 9999
         self.bn = bn
 
-        self.batch_norm = nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1], momentum=1).to(self.device)
+        self.batch_norms = nn.ModuleList([nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1], momentum=1).to(self.device), nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1], momentum=1).to(self.device)])
 
 
         if not compensate_inv_prob:
@@ -398,7 +398,7 @@ class MaskModel(nn.Module):
         for i, mask in enumerate(self.masks):
             mask_original = self.mask_act(mask(vs_in, override_mask=previous_mask))
             if self.bn:
-                mask_original = self.batch_norm(mask_original)
+                mask_original = self.batch_norms[i](mask_original)
 
             mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
             
