@@ -412,9 +412,9 @@ class MaskModel(nn.Module):
             previous_mask = mask
 
             if mask_sum is None:
-                mask_sum = mask_original
+                mask_sum = torch.abs(mask_original)
             else:
-                mask_sum += mask_original
+                mask_sum += torch.abs(mask_original)
 
         out = self.cmlp(vs_in, override_mask=mask)
 
