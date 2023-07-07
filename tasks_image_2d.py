@@ -164,7 +164,7 @@ def main(NON_UNIFORM=True,
             model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
         
         mask_model1 = encoding_controller.get_controlled_model(
-            mask_model_params_1, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
+            mask_model_params_1, encoding_models.EncodingType.NoEnc, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
         mask_model2 = encoding_controller.get_controlled_model(
             mask_model_params_2, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
         
