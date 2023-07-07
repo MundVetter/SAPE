@@ -157,7 +157,7 @@ def main(NON_UNIFORM=True,
 
         mask_model_params_2 = copy.deepcopy(model_params)
         mask_model_params_2.output_channels = 256
-        mask_model_params_2.std = 5
+        mask_model_params_2.std = SIGMA
         mask_model_params_2.use_id_encoding = False
 
         cmlp = encoding_controller.get_controlled_model(
