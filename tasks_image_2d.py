@@ -72,11 +72,11 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return best_model
 
-def main(NON_UNIFORM=True,
-         EPOCHS=2,
-         PATH="pluto/pluto.jpg",
+def main(NON_UNIFORM=False,
+         EPOCHS=8000,
+         PATH="images/chibi.png",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.NoControl,
+         CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
          LAMBDA_COST = 0.1,
          WEIGHT_DECAY = 1,
@@ -89,8 +89,8 @@ def main(NON_UNIFORM=True,
          ID = False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
-         RENDER_RES = 8000,
-         REMOVE_RANDOM = True, **kwargs) -> int:
+         RENDER_RES = 512,
+         REMOVE_RANDOM = False, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -144,7 +144,7 @@ def main(NON_UNIFORM=True,
     wandb.log({"masked_image": wandb.Image(str(constants.CHECKPOINTS_ROOT / '2d_images' / name / f'masked_{tag}.png'))})
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
-                                               hidden_dim=256, std=SIGMA, num_layers=LAYERS, use_id_encoding=ID, bn = BN)
+                                               hidden_dim=256, std=SIGMA, num_layers=LAYERS, use_id_encoding=ID, bn = False)
 
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
     os.makedirs(out_path, exist_ok=True)

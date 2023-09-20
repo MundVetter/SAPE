@@ -395,6 +395,7 @@ class MaskModel(nn.Module):
         mask_original = self.mask_act(self.mask(vs_in))
         if self.bn:
             mask_original = self.batch_norm(mask_original)
+            # mask_original = self.layer_norm(mask_original)
 
         mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
         ones = torch.ones((vs_in.shape[0], self.cmlp.model.model.model[0].in_features - mask.shape[1]), device=vs_in.device)
