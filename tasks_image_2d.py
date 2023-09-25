@@ -74,7 +74,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
 def main(NON_UNIFORM=False,
          EPOCHS=8000,
-         PATH="images/chibi.png",
+         PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
          CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
