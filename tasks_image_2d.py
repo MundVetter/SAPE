@@ -72,9 +72,9 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return best_model
 
-def main(NON_UNIFORM=False,
+def main(NON_UNIFORM=True,
          EPOCHS=8000,
-         PATH="images/chibi.png",
+         PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.HG,
          CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
@@ -82,7 +82,7 @@ def main(NON_UNIFORM=False,
          WEIGHT_DECAY = 1,
          RUN_NAME=None,
          LR = 1e-3,
-         THRESHOLD = 1,
+         THRESHOLD = 0,
          SIGMA = 20.,
          INV_PROB = True,
          BN = True,
@@ -148,17 +148,22 @@ def main(NON_UNIFORM=False,
 
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
     os.makedirs(out_path, exist_ok=True)
+    model_params.L = 16
+    model_params.F = 2
+    model_params.map_size = 19
+    model_params.base_res = 4
+    model_params.finest_res = 512
+    mask_model_params = copy.deepcopy(model_params)
+    mask_model_params.output_channels = model_params.L * model_params.F
+    mask_model_params.std = MASK_SIGMA
+    mask_model_params.use_id_encoding = True
+
+    if EncodingType.HG == ENCODING_TYPE:
+        model_params.hidden_dim = 64
+        model_params.num_layers = 2
 
     if CONTROLLER_TYPE == ControllerType.LearnableMask:
-        mask_model_params = copy.deepcopy(model_params)
-        mask_model_params.output_channels = 256
-        mask_model_params.std = MASK_SIGMA
-        mask_model_params.use_id_encoding = True
 
-        model_params.L = 16
-        model.F = 2
-        model.map_size = 19
-        model.base_res = 4
 
         cmlp = encoding_controller.get_controlled_model(
             model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
