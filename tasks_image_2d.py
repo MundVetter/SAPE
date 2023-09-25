@@ -75,7 +75,7 @@ def optimize(encoding_type: EncodingType, model_params,
 def main(NON_UNIFORM=False,
          EPOCHS=8000,
          PATH="images/chibi.png",
-         ENCODING_TYPE = EncodingType.FF,
+         ENCODING_TYPE = EncodingType.HG,
          CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
          LAMBDA_COST = 0.1,
@@ -155,12 +155,17 @@ def main(NON_UNIFORM=False,
         mask_model_params.std = MASK_SIGMA
         mask_model_params.use_id_encoding = True
 
+        model_params.L = 16
+        model.F = 2
+        model.map_size = 19
+        model.base_res = 4
+
         cmlp = encoding_controller.get_controlled_model(
             model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
         
     
         mask_model = encoding_controller.get_controlled_model(
-            mask_model_params, ENCODING_TYPE, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
+            mask_model_params, EncodingType.FF, encoding_controller.ControlParams(), ControllerType.NoControl).to(device)
 
         model = MaskModel(mask_model, cmlp, prob,
                             lambda_cost=LAMBDA_COST, mask_act=nnf.relu, threshold = THRESHOLD, compensate_inv_prob=INV_PROB, bn = BN)

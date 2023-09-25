@@ -5,7 +5,7 @@ import abc
 from custom_types import OptimizerW, nn, nnf, torch
 from utils import train_utils
 import copy
-
+from hashencoder import HashEncoder
 
 class ModelParams:
     def fill_args(self, **kwargs):
@@ -158,6 +158,19 @@ class GaussianRandomFourierFeatures(FourierFeatures):
         frequencies: T = torch.randn(self.domain_dim, self.num_frequencies)
         frequencies = nnf.normalize(frequencies, p=2, dim=0) * magnitude[None, :]
         return frequencies
+    
+class Hashgrid(EncodingLayer, abc.ABC):
+    def __init__(self, L: int, F: int, map_size: int, base_res: int) -> None:
+        super().__init__()
+        self.encoder = HashEncoder(input_dim=2, num_levels=L, level_dim=F, base_resolution=base_res, log2_hashmap_size=map_size)
+        self.frequencies = base_res * 2 ** torch.arange(L).float().repeat_interleave(F).to(self.encoder.embeddings.device)
+
+    @property
+    def output_channels(self) -> int:
+        return self.encoder.output_dim
+    
+    def forward(self, x: T) -> T:
+        return self.encoder(x)
 
 
 class PositionalEncoding(EncodingLayer):
@@ -280,6 +293,10 @@ class PrbfModel(EncodedMlpModel):
     def get_encoding_layer(self) -> EncodingLayer:
         return UniformRadialBasisGridEncoding(self.opt.domain_dim, self.opt.num_frequencies, self.opt.std)
 
+class HGModel(EncodedMlpModel):
+
+    def get_encoding_layer(self) -> EncodingLayer:
+        return Hashgrid(self.opt.L, self.opt.F, self.opt.map_size, self.opt.base_res)
 
 def get_model(params: ModelParams, model_type: EncodingType) -> EncodedMlpModel:
     if model_type is EncodingType.FF:
@@ -292,6 +309,9 @@ def get_model(params: ModelParams, model_type: EncodingType) -> EncodedMlpModel:
         model = PrbfModel(params)
     elif model_type is EncodingType.PE:
         model = PEModel(params)
+    elif model_type is EncodingType.HG:
+        model = HGModel(params)
+
     else:
         raise ValueError(f"{model_type.value} is not supported")
     return model
@@ -397,10 +417,10 @@ class MaskModel(nn.Module):
             mask_original = self.batch_norm(mask_original)
             # mask_original = self.layer_norm(mask_original)
 
-        mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
-        ones = torch.ones((vs_in.shape[0], self.cmlp.model.model.model[0].in_features - mask.shape[1]), device=vs_in.device)
-        mask = torch.cat([ones, mask], dim=-1)
-        out = self.cmlp(vs_in, override_mask=mask)
+        # mask = torch.stack([mask_original, mask_original], dim=2).view(vs_in.shape[0], -1)
+        # ones = torch.ones((vs_in.shape[0], self.cmlp.model.model.model[0].in_features - mask.shape[1]), device=vs_in.device)
+        # mask = torch.cat([ones, mask], dim=-1)
+        out = self.cmlp(vs_in, override_mask=mask_original)
 
         if get_mask:
             return out, mask_original

@@ -62,6 +62,7 @@ class EncodingType(enum.Enum):
     NoEnc = 'no_encoding'
     RBF = 'rbf'
     PRBF = 'periodic_rbf'
+    HG = 'hashgrid'
 
 
 class ControllerType(enum.Enum):
