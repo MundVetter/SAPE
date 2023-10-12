@@ -124,6 +124,7 @@ def main(NON_UNIFORM=False,
     os.makedirs(constants.CHECKPOINTS_ROOT, exist_ok=True)
     name = files_utils.split_path(PATH)[1]
 
+    # TODO: make this less hacky
     if RENDER_RES == 8000:
         scale = 0.025
         if NON_UNIFORM:
