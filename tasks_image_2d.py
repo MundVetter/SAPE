@@ -31,7 +31,7 @@ def optimize(encoding_type: EncodingType, model_params,
         device), labels.to(device), image_labels.to(device)
     inv_prob = (1. / prob).float().to(device)
     inv_prob = inv_prob / inv_prob.mean()
-    opt = Optimizer(model.parameters(), lr=lr)
+    opt = Optimizer(model.parameters(), lr=0.001, betas=(0.9, 0.99), eps=10**(-15))
     logger = train_utils.Logger().start(control_params.num_iterations, tag=tag)
     files_utils.export_image(target_image, out_path / 'target.png')
 
@@ -72,20 +72,20 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return best_model
 
-def main(NON_UNIFORM=True,
+def main(NON_UNIFORM=False,
          EPOCHS=8000,
          PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.HG,
-         CONTROLLER_TYPE = ControllerType.LearnableMask,
+         CONTROLLER_TYPE = ControllerType.NoControl,
          MASK_RES = 512,
-         LAMBDA_COST = 0.1,
+         LAMBDA_COST = 0.001,
          WEIGHT_DECAY = 1,
          RUN_NAME=None,
          LR = 1e-3,
          THRESHOLD = 0,
          SIGMA = 20.,
          INV_PROB = True,
-         BN = True,
+         BN = False,
          ID = False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
@@ -148,19 +148,19 @@ def main(NON_UNIFORM=True,
 
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
     os.makedirs(out_path, exist_ok=True)
-    model_params.L = 16
+    model_params.L = 12
     model_params.F = 2
-    model_params.map_size = 19
-    model_params.base_res = 4
-    model_params.finest_res = 512
+    model_params.map_size = 12
+    model_params.base_res = 1
+    model_params.finest_res = 64
     mask_model_params = copy.deepcopy(model_params)
     mask_model_params.output_channels = model_params.L * model_params.F
     mask_model_params.std = MASK_SIGMA
     mask_model_params.use_id_encoding = True
 
     if EncodingType.HG == ENCODING_TYPE:
-        model_params.hidden_dim = 64
-        model_params.num_layers = 2
+        model_params.hidden_dim = 256
+        model_params.num_layers = 3
 
     if CONTROLLER_TYPE == ControllerType.LearnableMask:
 
