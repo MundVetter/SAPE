@@ -14,17 +14,22 @@ import matplotlib.pyplot as plt
 import os
 from pathlib import Path
 import wandb
+from siren_pytorch import SirenNet
 
 
 def optimize(encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controller.ControlParams, group, tag, out_path, device: D,
              freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None, compensate_inv_prob = False):
     vs_base, vs_in, labels, target_image, image_labels, _, prob = group
-    model_provided = True
-    if model is None:
-        model = encoding_controller.get_controlled_model(
-            model_params, encoding_type, control_params, controller_type).to(device)
-        model_provided = False
+    model = SirenNet(
+        dim_in = 2,
+        dim_hidden = 256,                  # hidden dimension
+        dim_out = 3,                       # output dimension, ex. rgb value
+        num_layers = 3,                    # number of layers
+        final_activation = nn.Sigmoid(),   # activation of final layer (nn.Identity() for direct output)
+        w0_initial = 30.).to(device)
+    
+
     wandb.watch(model)
     block_iterations = model.block_iterations
     vs_base, vs_in, labels, image_labels = vs_base.to(device), vs_in.to(
@@ -72,7 +77,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return best_model
 
-def main(NON_UNIFORM=False,
+def main(NON_UNIFORM=True,
          EPOCHS=8000,
          PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
@@ -90,7 +95,8 @@ def main(NON_UNIFORM=False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
          RENDER_RES = 512,
-         REMOVE_RANDOM = False, **kwargs) -> int:
+         REMOVE_RANDOM = False, 
+         SIREN = True, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -170,6 +176,7 @@ def main(NON_UNIFORM=False,
 
         torch.save(mask, out_path / f'mask_{tag}.pt')
     else:
+
         control_params = encoding_controller.ControlParams(
         num_iterations=EPOCHS, epsilon=1e-3, res=MASK_RES)
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
