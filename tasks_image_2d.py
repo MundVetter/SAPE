@@ -31,7 +31,7 @@ def optimize(encoding_type: EncodingType, model_params,
     
 
     wandb.watch(model)
-    block_iterations = model.block_iterations
+    # block_iterations = model.block_iterations
     vs_base, vs_in, labels, image_labels = vs_base.to(device), vs_in.to(
         device), labels.to(device), image_labels.to(device)
     inv_prob = (1. / prob).float().to(device)
