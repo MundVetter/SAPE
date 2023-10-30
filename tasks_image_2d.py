@@ -101,7 +101,7 @@ def main(NON_UNIFORM=True,
     if constants.DEBUG:
         wandb.init(mode="disabled")
     else:
-        wandb.init(project="2d_regres",
+        wandb.init(project="SIREN",
                    group=RUN_NAME,
             config={
                 "non_uniform": NON_UNIFORM,
