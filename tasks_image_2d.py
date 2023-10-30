@@ -49,8 +49,8 @@ def optimize(encoding_type: EncodingType, model_params,
         else:
             out = model(vs_in, override_mask=mask)
         loss_all = nnf.mse_loss(out, labels, reduction='none')
-        if not model_provided:
-            model.stash_iteration(loss_all.mean(-1))
+        # if not model_provided:
+        #     model.stash_iteration(loss_all.mean(-1))
         
         if compensate_inv_prob:
             loss_all[:, 0] *= inv_prob
@@ -68,8 +68,8 @@ def optimize(encoding_type: EncodingType, model_params,
         logger.stash_iter('mse_train', loss)
         wandb.log({'mse_train': loss})
 
-        if not model_provided and block_iterations > 0 and (i + 1) % block_iterations == 0:
-            model.update_progress()
+        # if not model_provided and block_iterations > 0 and (i + 1) % block_iterations == 0:
+        #     model.update_progress()
         if (((i + 1) % freq == 0) or (i == 0)) and verbose:
             log_evaluation_progress(model, target_image, out_path, tag, vs_base, device, i = i, labels = eval_labels)
         logger.reset_iter()
