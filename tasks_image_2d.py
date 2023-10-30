@@ -28,7 +28,7 @@ def optimize(encoding_type: EncodingType, model_params,
         num_layers = 6,                    # number of layers
         final_activation = nn.Identity(),   # activation of final layer (nn.Identity() for direct output)
         w0_initial = 30.).to(device)
-    
+    model.is_progressive = False
 
     wandb.watch(model)
     # block_iterations = model.block_iterations
@@ -81,7 +81,7 @@ def main(NON_UNIFORM=True,
          EPOCHS=8000,
          PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.LearnableMask,
+         CONTROLLER_TYPE = ControllerType.NoControl,
          MASK_RES = 512,
          LAMBDA_COST = 0.1,
          WEIGHT_DECAY = 1,
