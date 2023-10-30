@@ -25,7 +25,7 @@ def optimize(encoding_type: EncodingType, model_params,
         dim_in = 2,
         dim_hidden = 256,                  # hidden dimension
         dim_out = 3,                       # output dimension, ex. rgb value
-        num_layers = 3,                    # number of layers
+        num_layers = 6,                    # number of layers
         final_activation = nn.Sigmoid(),   # activation of final layer (nn.Identity() for direct output)
         w0_initial = 30.).to(device)
     
