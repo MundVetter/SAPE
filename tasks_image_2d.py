@@ -67,6 +67,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
         if tv_loss:
             loss_all = nnf.mse_loss(out, labels, reduction='none')
+            print(out[0])
             loss_all += tv(out)
         else:
             loss_all = nnf.mse_loss(out, labels, reduction='none')
