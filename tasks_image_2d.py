@@ -27,7 +27,7 @@ def optimize(encoding_type: EncodingType, model_params,
         dim_out = 3,                       # output dimension, ex. rgb value
         num_layers = 6,                    # number of layers
         final_activation = nn.Identity(),   # activation of final layer (nn.Identity() for direct output)
-        w0_initial = 10.).to(device)
+        w0_initial = 30.).to(device)
     model.is_progressive = False
 
     wandb.watch(model)
