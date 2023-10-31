@@ -28,7 +28,7 @@ class TVLoss(nn.Module):
         count_w = self._tensor_size(x[:,:,:,1:])
         h_tv = torch.pow((x[:,:,1:,:]-x[:,:,:h_x-1,:]),2).sum()
         w_tv = torch.pow((x[:,:,:,1:]-x[:,:,:,:w_x-1]),2).sum()
-        return self.TVLoss_weight*2*(h_tv/count_h+w_tv/count_w)/batch_size
+        return self.TVLoss_weight*2*(h_tv/count_h+w_tv/count_w)
 
     def _tensor_size(self,t):
         return t.size()[1]*t.size()[2]*t.size()[3]
@@ -52,7 +52,6 @@ def optimize(encoding_type: EncodingType, model_params,
     opt = Optimizer(model.parameters(), lr=lr)
     logger = train_utils.Logger().start(control_params.num_iterations, tag=tag)
     files_utils.export_image(target_image, out_path / 'target.png')
-
     if tv_loss:
         tv = TVLoss(0.001)
 
@@ -65,12 +64,8 @@ def optimize(encoding_type: EncodingType, model_params,
         else:
             out = model(vs_in, override_mask=mask)
 
-        if tv_loss:
-            loss_all = nnf.mse_loss(out, labels, reduction='none')
-            print(out[0])
-            loss_all += tv(out)
-        else:
-            loss_all = nnf.mse_loss(out, labels, reduction='none')
+
+        loss_all = nnf.mse_loss(out, labels, reduction='none')
         if not model_provided:
             model.stash_iteration(loss_all.mean(-1))
         
@@ -78,6 +73,8 @@ def optimize(encoding_type: EncodingType, model_params,
             loss_all[:, 0] *= inv_prob
             loss_all[:, 1] *= inv_prob
             loss_all[:, 2] *= inv_prob
+        if tv_loss:
+            loss_all += tv(out.reshape(-1, 3, 256, 256))
         loss = loss_all.mean()
         if loss < lowest_loss:
             lowest_loss = loss
@@ -103,7 +100,7 @@ def main(NON_UNIFORM=True,
          EPOCHS=8000,
          PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.LearnableMask,
+         CONTROLLER_TYPE = ControllerType.NoControl,
          MASK_RES = 512,
          LAMBDA_COST = 0.1,
          WEIGHT_DECAY = 1,
