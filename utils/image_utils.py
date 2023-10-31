@@ -197,7 +197,7 @@ def init_source_target(path: Union[ARRAY, str], name: str, max_res: int, scale: 
         image = crop_square(image)
     image = resize(image, max_res)
     h, w, c = image.shape
-    cache_path = constants.RAW_IMAGES / 'cache' / f'{name}_{scale}_{non_uniform_sampling}_{gaus_sigma}.pkl'
+    cache_path = constants.RAW_IMAGES / 'cache' / f'{name}_{scale}_{non_uniform_sampling}__{gaus_sigma}.pkl'
 
     if cache_path.exists():
         cache = files_utils.load_pickle(cache_path)
