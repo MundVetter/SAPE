@@ -15,10 +15,28 @@ import os
 from pathlib import Path
 import wandb
 
+class TVLoss(nn.Module):
+    def __init__(self,TVLoss_weight=1):
+        super(TVLoss,self).__init__()
+        self.TVLoss_weight = TVLoss_weight
+
+    def forward(self,x):
+        batch_size = x.size()[0]
+        h_x = x.size()[2]
+        w_x = x.size()[3]
+        count_h = self._tensor_size(x[:,:,1:,:])
+        count_w = self._tensor_size(x[:,:,:,1:])
+        h_tv = torch.pow((x[:,:,1:,:]-x[:,:,:h_x-1,:]),2).sum()
+        w_tv = torch.pow((x[:,:,:,1:]-x[:,:,:,:w_x-1]),2).sum()
+        return self.TVLoss_weight*2*(h_tv/count_h+w_tv/count_w)/batch_size
+
+    def _tensor_size(self,t):
+        return t.size()[1]*t.size()[2]*t.size()[3]
+
 
 def optimize(encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controller.ControlParams, group, tag, out_path, device: D,
-             freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None, compensate_inv_prob = False):
+             freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None, compensate_inv_prob = False, tv_loss = True):
     vs_base, vs_in, labels, target_image, image_labels, _, prob = group
     model_provided = True
     if model is None:
@@ -35,6 +53,9 @@ def optimize(encoding_type: EncodingType, model_params,
     logger = train_utils.Logger().start(control_params.num_iterations, tag=tag)
     files_utils.export_image(target_image, out_path / 'target.png')
 
+    if tv_loss:
+        tv = TVLoss(0.001)
+
     lowest_loss = 9999
     best_model = None
     for i in range(control_params.num_iterations):
@@ -43,7 +64,12 @@ def optimize(encoding_type: EncodingType, model_params,
             out = model(vs_in)
         else:
             out = model(vs_in, override_mask=mask)
-        loss_all = nnf.mse_loss(out, labels, reduction='none')
+
+        if tv_loss:
+            loss_all = nnf.mse_loss(out, labels, reduction='none')
+            loss_all += tv(out)
+        else:
+            loss_all = nnf.mse_loss(out, labels, reduction='none')
         if not model_provided:
             model.stash_iteration(loss_all.mean(-1))
         
@@ -72,7 +98,7 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return best_model
 
-def main(NON_UNIFORM=False,
+def main(NON_UNIFORM=True,
          EPOCHS=8000,
          PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
@@ -90,7 +116,8 @@ def main(NON_UNIFORM=False,
          LAYERS = 3,
          MASK_SIGMA = 5.,
          RENDER_RES = 512,
-         REMOVE_RANDOM = False, **kwargs) -> int:
+         REMOVE_RANDOM = False,
+         TV_LOSS = True, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -113,7 +140,8 @@ def main(NON_UNIFORM=False,
                 "layers": LAYERS,
                 "mask sigma": MASK_SIGMA,
                 "render res": RENDER_RES,
-                "remove random": REMOVE_RANDOM
+                "remove random": REMOVE_RANDOM,
+                "tv loss": TV_LOSS
             })
         wandb.run.log_code(".")
 
@@ -174,7 +202,7 @@ def main(NON_UNIFORM=False,
         control_params = encoding_controller.ControlParams(
         num_iterations=EPOCHS, epsilon=1e-3, res=MASK_RES)
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                         500, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB)
+                         500, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB, tv_loss = TV_LOSS)
 
     torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
 
