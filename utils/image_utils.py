@@ -130,7 +130,7 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
 
     if non_uniform_sampling:
         if scale == -2:
-            split = int(h * w * 0.0025)
+            split = int(h * w * 0.25)
 
             # Generate the 2D Gaussian weight map
             x, y = np.meshgrid(np.linspace(-1,1,w), np.linspace(-1,1,h))
