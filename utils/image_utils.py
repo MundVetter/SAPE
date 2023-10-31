@@ -117,7 +117,7 @@ def unroll_domain(h: int, w: int) -> T:
     vs = torch.stack(vs, dim=2)
     return vs
 
-def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling=False):
+def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling=False, gaus_sigma = 0.3):
     h, w, c = image.shape
     coords = unroll_domain(h, w).view(-1, 2)
     labels = torch.from_numpy(image).reshape(-1, c).float() / 255
@@ -135,7 +135,7 @@ def random_sampling(image: ARRAY, scale: Union[float, int], non_uniform_sampling
             # Generate the 2D Gaussian weight map
             x, y = np.meshgrid(np.linspace(-1,1,w), np.linspace(-1,1,h))
             d = np.sqrt(x*x + y*y)
-            sigma, mu = 0.3, 0.0
+            sigma, mu = gaus_sigma, 0.0
             gaussian_weight_map = np.exp(-( (d-mu)**2 / ( 2.0 * sigma**2 ) ) )
             weight_map = gaussian_weight_map / gaussian_weight_map.sum()
         else:
@@ -186,7 +186,7 @@ def grid_sampling(image: ARRAY, scale: int):
 
 
 def init_source_target(path: Union[ARRAY, str], name: str, max_res: int, scale: Union[float, int],
-                       square: bool = True, non_uniform_sampling=False):
+                       square: bool = True, non_uniform_sampling=False, gaus_sigma = 0.3):
     if isinstance(path, pathlib.PurePath):
         image = np.array(Image.open(path).convert('RGB'))
     else:
@@ -197,12 +197,12 @@ def init_source_target(path: Union[ARRAY, str], name: str, max_res: int, scale: 
         image = crop_square(image)
     image = resize(image, max_res)
     h, w, c = image.shape
-    cache_path = constants.RAW_IMAGES / 'cache' / f'{name}_{scale}_{non_uniform_sampling}.pkl'
+    cache_path = constants.RAW_IMAGES / 'cache' / f'{name}_{scale}_{non_uniform_sampling}_{gaus_sigma}.pkl'
 
     if cache_path.exists():
         cache = files_utils.load_pickle(cache_path)
     else:
-        cache = random_sampling(image, scale, non_uniform_sampling=non_uniform_sampling)
+        cache = random_sampling(image, scale, non_uniform_sampling=non_uniform_sampling, gaus_sigma=gaus_sigma)
         files_utils.save_pickle(cache, cache_path)
     labels, samples, vs_base, masked_cords, mask_labels, masked_image, prob = cache
     image_labels = torch.from_numpy(image).reshape(-1, c).float() / 255
