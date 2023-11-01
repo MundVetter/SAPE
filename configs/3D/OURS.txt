@@ -4,5 +4,5 @@
 --layers 4
 --threshold 0
 --sigma 20
---task 3D
+--task 3d
 --folder_name stanford
