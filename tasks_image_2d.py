@@ -53,7 +53,7 @@ def optimize(encoding_type: EncodingType, model_params,
     logger = train_utils.Logger().start(control_params.num_iterations, tag=tag)
     files_utils.export_image(target_image, out_path / 'target.png')
     if tv_loss:
-        tv = TVLoss(0.001)
+        tv = TVLoss(0.01)
 
     lowest_loss = 9999
     best_model = None
