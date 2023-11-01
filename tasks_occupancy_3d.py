@@ -118,7 +118,7 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
     name = ds.name
 
     ds.reset()
-    in_iters = len(ds) // batch_size
+    in_iters = max(len(ds) // batch_size, 1)
     if model is None:
         model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
     lr = 1e-4
