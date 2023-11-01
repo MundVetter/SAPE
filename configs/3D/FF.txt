@@ -5,4 +5,4 @@
 --batch_size 1_000_000
 --sigma 12
 --task 3d
---folder_name stanford
+--folder_name statue
