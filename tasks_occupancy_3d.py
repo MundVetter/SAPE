@@ -41,7 +41,8 @@ class MeshSampler(Dataset):
         labels = get_in_out(self.mesh, near_points).unsqueeze(1)
         return near_points, labels, on_surface_points
 
-    def init_samples(self, total=1e6) -> TS:
+    def init_samples(self) -> TS:
+        total = self.n_samples
         split = [float(part) / sum(self.split) for part in self.split]
         near_points_a, labels_a, on_surface_points = self.get_surface_points(int(total * split[0]), .01)
         near_points_b, labels_b, _ = self.get_surface_points(int(total * split[0]), .1, on_surface_points)
@@ -78,7 +79,7 @@ class MeshSampler(Dataset):
         mesh = mesh_utils.triangulate_mesh(mesh)[0]
         return mesh
 
-    def __init__(self, path, device: D, buffer_size=10):
+    def __init__(self, path, device: D, buffer_size=10, n_samples = 1e6):
         self.device = device
         self.name = files_utils.split_path(path)[1]
         self.data = None #self.load_data(path)
@@ -94,6 +95,7 @@ class MeshSampler(Dataset):
             self.cache_saved = len(self.data) >= self.buffer_size
         self.points: TN = None
         self.labels: TN = None
+        self.n_samples = n_samples
 
 
 def model_for_export(model) -> Callable[[T], T]:
@@ -112,30 +114,11 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
              controller_type: ControllerType = None, control_params: encoding_controller.ControlParams = None,
              device: D = CPU, freq: int = 25, verbose=False, model = None, Opt = Optimizer, weight_decay = 0, custom_train = False, tag = '', out_path = 'checkpoints/3d_occupancy/', epochs = 1, batch_size = 5000, render_res = 256):
 
-    # def export_heatmap():
-    #     model.eval()
-    #     res = 128
-    #     mask = model.mask.view(res, res, res, -1).sum(-1).float() / model.mask.shape[-1]
-    #     mask = mask.view(1, 1, res, res, res)
-    #     mask = nnf.interpolate(mask, mode='trilinear', scale_factor=256 // res, align_corners=True).squeeze()
-    #     for i in range(3):
-    #         for j in range(mask.shape[0]):
-    #             mask_ = mask[:, :, j]
-    #             if i == 1:
-    #                 mask_ = mask_.permute(1, 0)
-    #             mask_ = mask_.flip(0)
-    #             hm = image_utils.to_heatmap(mask_)
-    #             files_utils.export_image(hm, f'{out_path}heatmap/{j:04d}.png')
-    #         image_utils.gifed(f'{out_path}heatmap/', .1, f'{tag}_{i:d}', reverse=True)
-    #         files_utils.delete_all(f'{out_path}heatmap/', '.png')
-    #         mask = mask.permute(2, 0, 1)
-    #     return
 
     name = ds.name
 
     ds.reset()
     in_iters = len(ds) // batch_size
-    # control_params.num_iterations = in_iters * num_i
     if model is None:
         model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
     lr = 1e-4
@@ -156,7 +139,6 @@ def optimize(ds: MeshSampler, encoding_type: EncodingType = None, model_params: 
                     mask_size = encoding_models.mean_abs_weights(model.mask)
                     main_size = encoding_models.mean_abs_weights(model.cmlp)
                     wandb.log({'mask_size': mask_size, 'main_size': main_size})
-                    # export_heatmap()
             else:
                 out = model(vs)
                 loss_all = nnf.binary_cross_entropy_with_logits(out, labels, reduction='none')
@@ -223,7 +205,8 @@ def main(EPOCHS=10,
          BN = False,
          ID = False,
          MASK_SIGMA = 1,
-         LAYERS = 4, **kwargs) -> int:
+         LAYERS = 4,
+         N_SAMPLES = 1e6, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -241,7 +224,8 @@ def main(EPOCHS=10,
                 "sigma": SIGMA,
                 "bn": BN,
                 "use_id": ID,
-                "mask_sigma": MASK_SIGMA
+                "mask_sigma": MASK_SIGMA,
+                "n samples": N_SAMPLES
             })
         wandb.run.log_code(".")
 
@@ -249,7 +233,7 @@ def main(EPOCHS=10,
     print(device)
 
     mesh_path = str(constants.DATA_ROOT / PATH)
-    ds = MeshSampler(mesh_path, device)
+    ds = MeshSampler(mesh_path, device, n_samples=N_SAMPLES)
 
     name = ds.name
     tag = f'{ENCODING_TYPE}_{CONTROLLER_TYPE}_{MASK_RES}_{RUN_NAME}'
@@ -275,6 +259,7 @@ def main(EPOCHS=10,
 
     ds_eval = MeshSampler(mesh_path, device)
     result = evaluate(model, ds_eval, batch_size=BATCH_SIZE)
+
     print(f"{tag} IOU: ", result)
     wandb.log({'iou': result})
 
