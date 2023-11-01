@@ -7,3 +7,4 @@
 --n_epochs 3000
 --batch_size 1_000_000
 --task 3D
+--folder_name stanford

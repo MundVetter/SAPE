@@ -5,3 +5,4 @@
 --batch_size 1_000_000
 --sigma 12
 --task 3D
+--folder_name stanford

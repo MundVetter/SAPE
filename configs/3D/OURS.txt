@@ -5,3 +5,4 @@
 --threshold 0
 --sigma 20
 --task 3D
+--folder_name stanford
