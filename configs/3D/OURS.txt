@@ -4,3 +4,4 @@
 --layers 4
 --threshold 0
 --sigma 20
+--n_epochs 3000
