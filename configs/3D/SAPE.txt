@@ -5,6 +5,5 @@
 --sigma 20
 --layers 8
 --n_epochs 3000
---batch_size 1_000_000
 --task 3d
 --folder_name statue

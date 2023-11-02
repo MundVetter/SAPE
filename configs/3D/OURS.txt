@@ -5,4 +5,5 @@
 --threshold 0
 --sigma 20
 --task 3d
+--n_epochs 3000
 --folder_name statue
