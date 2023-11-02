@@ -1,6 +1,6 @@
 --id
 --weight_decay 0
---mask_res 64
+--mask_res 128
 --controller_type SpatialProgressionStashed
 --sigma 20
 --layers 8

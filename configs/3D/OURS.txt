@@ -1,5 +1,6 @@
 --bn
 --weight_decay 1.
+--lambda_cost 0.01
 --controller_type LearnableMask
 --layers 4
 --threshold 0
