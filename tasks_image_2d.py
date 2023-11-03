@@ -115,6 +115,7 @@ def main(NON_UNIFORM=True,
          MASK_SIGMA = 5.,
          RENDER_RES = 512,
          REMOVE_RANDOM = False,
+         GAUS_SIGMA = 0.3,
          TV_LOSS = True, **kwargs) -> int:
 
     if constants.DEBUG:
@@ -139,7 +140,8 @@ def main(NON_UNIFORM=True,
                 "mask sigma": MASK_SIGMA,
                 "render res": RENDER_RES,
                 "remove random": REMOVE_RANDOM,
-                "tv loss": TV_LOSS
+                "tv loss": TV_LOSS,
+                "gaus sigma": GAUS_SIGMA
             })
         wandb.run.log_code(".")
 
@@ -161,7 +163,7 @@ def main(NON_UNIFORM=True,
         scale = -2
 
     group = init_source_target(image_path, name, scale=scale,
-                            max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM)
+                            max_res=RENDER_RES, square=False, non_uniform_sampling=NON_UNIFORM, gaus_sigma=GAUS_SIGMA)
     vs_base, vs_in, labels, target_image, image_labels, (masked_cords, masked_labels, masked_image), prob = group
 
     tag_without_filename = f"{ENCODING_TYPE.value}_{MASK_RES}_{CONTROLLER_TYPE.value}_{NON_UNIFORM}_{RUN_NAME}_{scale}"
