@@ -10,7 +10,7 @@ from utils.files_utils import get_image_filenames, get_mesh_filenames
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--partition", type=str, default="gpu_mig")
+    parser.add_argument("--partition", type=str, default="gpu")
     parser.add_argument("--n_runs", type=int, default=1)
     parser.add_argument("--array_parallelism", type=int, default=8)
     parser.add_argument("--controller_type", type=str, default="SpatialProgressionStashed")
@@ -64,7 +64,7 @@ if __name__ == "__main__":
     executor.update_parameters(
         timeout_min=args.timeout,
         gpus_per_node=1,
-        cpus_per_task=9,
+        cpus_per_task=10,
         nodes=1,
         slurm_signal_delay_s=120,
         slurm_partition=args.partition,
