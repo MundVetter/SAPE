@@ -252,7 +252,10 @@ def plot_image(model, vs_in: T, ref_image: ARRAY):
             else:
                 if mask.dim() != out.dim():
                     mask: T = mask.unsqueeze(0).expand(out.shape[0], mask.shape[0])
-                heat = (torch.abs(mask[:, :]) * (model.cmlp.model.encode.frequencies**2).sum(0)**0.5).sum(1)
+                if model.cmlp is not None:
+                    heat = (torch.abs(mask[:, :]) * (model.cmlp.model.encode.frequencies**2).sum(0)**0.5).sum(1)
+                else:
+                    hm = mask.sum(1) / mask.shape[1]
                 hm = heat / heat.max()
                 hm = image_utils.to_heatmap(hm)
                 hm = hm.view(*ref_image.shape[:-1], 3)
