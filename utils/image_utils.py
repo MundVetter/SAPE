@@ -255,7 +255,7 @@ def plot_image(model, vs_in: T, ref_image: ARRAY):
                 if model.cmlp is not None:
                     heat = (torch.abs(mask[:, :]) * (model.cmlp.model.encode.frequencies**2).sum(0)**0.5).sum(1)
                 else:
-                    hm = mask.sum(1) / mask.shape[1]
+                    hm = mask.sum(1)
                 hm = heat / heat.max()
                 hm = image_utils.to_heatmap(hm)
                 hm = hm.view(*ref_image.shape[:-1], 3)
