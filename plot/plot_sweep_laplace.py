@@ -32,15 +32,15 @@ from io import StringIO
 # 80,27.13,20.37,35.77,31.85,29.58,36.46
 # """
 
-# data = """
-# sigma,TEST_psnr,TEST_min,TEST_max,TRAIN_psnr,TRAIN_min,TRAIN_max
-# 1,25.89,20.91,34.86,40.53,37.34,43.51
-# 5,25.82,20.78,35.04,43.39,36.92,46.81
-# 10,25.74,20.56,34.95,44.77,38.76,48.16
-# 20,25.63,20.30,35.07,44.50,39.51,46.78
-# 40,25.46,20.19,35.05,42.9,39.1,47.14
-# 80,25.21,20.24,34.42,41.71,38.65,44.84
-# """
+data = """
+sigma,TEST_psnr,TEST_min,TEST_max,TRAIN_psnr,TRAIN_min,TRAIN_max
+1,25.89,20.91,34.86,40.53,37.34,43.51
+5,25.82,20.78,35.04,43.39,36.92,46.81
+10,25.74,20.56,34.95,44.77,38.76,48.16
+20,25.63,20.30,35.07,44.50,39.51,46.78
+40,25.46,20.19,35.05,42.9,39.1,47.14
+80,25.21,20.24,34.42,41.71,38.65,44.84
+"""
 
 # data= """
 # sigma,TEST_psnr,TEST_min,TEST_max,TRAIN_psnr,TRAIN_min,TRAIN_max
@@ -86,16 +86,20 @@ for mode, color in zip(['TEST', 'TRAIN'], [keynote_blue, keynote_orange]):
 
 # Set title and labels for axes for \alpha_{reg}
 # alpha_{reg}
-ax.set_xlabel("$\\alpha_{reg}$", fontsize=14)
-# ax.set_xlabel("$\sigma$", fontsize=14)
+# ax.set_xlabel("$\\alpha_{reg}$", fontsize=14)
+ax.set_xlabel("$\sigma$", fontsize=14)
 ax.set_ylabel('PSNR', fontsize=14)
 
 # Add a grid
 ax.grid(True)
-plt.xscale('log')
+# plt.xscale('log')
 # Add a legend
-ax.legend(loc='lower right', fontsize=12)
+ax.legend(loc='upper right', fontsize=12)
 
 # Show the plot with improved formatting
+plt.gcf().set_size_inches(4, 3)
 plt.tight_layout()
-plt.show()
+# make the plot small
+# save the plot as pdf
+plt.savefig('sweep.pdf')
+# plt.show()
