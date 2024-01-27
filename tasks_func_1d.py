@@ -1,3 +1,6 @@
+import os
+os.environ['PYTORCH_ENABLE_MPS_FALLBACK']='1'
+
 from custom_types import *
 from models import encoding_controller, encoding_models
 from utils import files_utils, train_utils, image_utils
@@ -5,12 +8,15 @@ import constants
 import PIL.ImageDraw as ImageDraw
 import PIL.Image as Image
 import imageio
-import os
+
 import matplotlib.pyplot as plt
 import sktime
 from sktime.datasets import load_from_tsfile_to_dataframe
 from pathlib import Path
+from utils.image_utils import psnr
 import wandb
+import copy
+
 
 plt.ioff()
 
@@ -31,67 +37,91 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params,
              num_samples: int, device: D,
              freq=500, verbose=False, name='default'):
+
     (vs_base, labels) = train
     (vs_test, labels_test) = test
     vs_base, labels, vs_test, labels_test = vs_base.to(device), torch.from_numpy(labels).to(device), vs_test.to(device), torch.from_numpy(labels_test).to(device)
     lr = 1e-5
-    model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
+
+    if controller_type is ControllerType.LearnableMask:
+        model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, ControllerType.NoControl).to(device)
+        mask_model_params = copy.deepcopy(model_params)
+        mask_model_params.output_channels = 256
+        mask_model_params.std = 1.
+        mask_model = encoding_controller.get_controlled_model(mask_model_params, encoding_type, control_params, ControllerType.NoControl).to(device)
+        model = encoding_models.MaskModel(mask_model, model).to(device)
+    else:
+        model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
+        block_iterations = model.block_iterations
+
     tag = f'{encoding_type.value}_{controller_type.value}'
     if encoding_type is EncodingType.NoEnc:
         lr = 1e-4
-    block_iterations = model.block_iterations
+   
     out_path = f'{constants.CHECKPOINTS_ROOT}/1d/{name}/'
     os.makedirs(f'{out_path}', exist_ok=True)
-    opt = Optimizer(model.parameters(), lr=lr)
+    if ControllerType.LearnableMask == controller_type:
+        opt = OptimizerW(model.parameters(), lr=lr, weight_decay=1)
+    else:
+        opt = Optimizer(model.parameters(), lr=lr)
     logger = train_utils.Logger().start(control_params.num_iterations, tag=tag)
-    plot_character_trajectory(vs_base, labels[:, 0], labels[:, 1], labels[:, 2],  f"{tag}_train", out_path)
-    plot_character_trajectory(vs_test[:, 0], labels_test[:, 0], labels_test[:, 1], labels_test[:, 2], f"{tag}_test", out_path)
+    plot_character_trajectory(vs_base, labels[:, 0], labels[:, 1], labels[:, 2],  f"{tag}", "train_input", out_path)
+    plot_character_trajectory(vs_test[:, 0], labels_test[:, 0], labels_test[:, 1], labels_test[:, 2], f"{tag}", "test_input", out_path)
     test_loss = 0
 
     for i in range(control_params.num_iterations):
         opt.zero_grad()
-        out = model(vs_base)
-        loss_all = nnf.mse_loss(out, labels, reduction='none')
-        loss = loss_all.mean()
-        loss.backward()
-        opt.step()
-        model.stash_iteration(loss_all.mean(-1))
-        if block_iterations > 0 and (i + 1) % block_iterations == 0:
-            model.update_progress()
-        logger.reset_iter('loss', loss)
+        if ControllerType.LearnableMask == controller_type:
+            model.train_iter(vs_base, labels, logger)
+            opt.step()
+        else:
+            out = model(vs_base)
+            loss_all = nnf.mse_loss(out, labels, reduction='none')
+            loss = loss_all.mean()
+            loss.backward()
+            opt.step()
+            wandb.log({'mse_train': loss_all})
+            model.stash_iteration(loss_all.mean(-1))
+            logger.reset_iter('mse_train', loss.mean())
+    
+            if block_iterations > 0 and (i + 1) % block_iterations == 0:
+                model.update_progress()
+
         logger.stash_iter('loss_test', test_loss)
         if verbose and ((i + 1) % freq == 0 or i == 0):
             with torch.no_grad():
                 model.eval()
                 out = model(vs_base)
                 # aprox_func = torch.cat((vs_base, out), dim=1)
-                plot_character_trajectory(vs_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}_{i}_train", out_path)
+                plot_character_trajectory(vs_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}_{i}", "train", out_path)
                 test_out = model(vs_test)
                 # aprox_func = torch.cat((vs_base, out), dim=1)
-                plot_character_trajectory(vs_test, test_out[:, 0], test_out[:, 1], test_out[:, 2], f"{tag}_{i}_test", out_path)
-                if model.is_progressive:
-                    _, mask_base = model(vs_base, get_mask=True)
-                    if mask_base.dim() == 1:
-                        mask_base = mask_base.unsqueeze(0).expand(vs_base.shape[0], mask_base.shape[0])
-                    hm_base = mask_base.sum(1) / mask_base.shape[1]
-                    hm_base = image_utils.to_heatmap(hm_base)
+                plot_character_trajectory(vs_test, test_out[:, 0], test_out[:, 1], test_out[:, 2], f"{tag}_{i}", "test", out_path)
+                # if model.is_progressive:
+                #     _, mask_base = model(vs_base, get_mask=True)
+                #     if mask_base.dim() == 1:
+                #         mask_base = mask_base.unsqueeze(0).expand(vs_base.shape[0], mask_base.shape[0])
+                #     hm_base = mask_base.sum(1) / mask_base.shape[1]
+                #     hm_base = image_utils.to_heatmap(hm_base)
                     # export_poly(aprox_func, torch.cat((vs_target, labels_target), dim=1), f'{out_path}heatmap_{tag}/{i:05d}.png',
                                 # colors=(None, hm_base))
                 # calculate the loss on the test data
-                test_loss = nnf.mse_loss(test_out, labels_test)
-                logger.stash_iter('loss_test', test_loss)
+                test_loss = psnr(test_out, labels_test)
+                logger.stash_iter('PSNR test', test_loss)
+                wandb.log({'PSNR test': test_loss})
                 model.train()
     logger.stop()
     with torch.no_grad():
-        final_test_loss = model(vs_test)
-        final_test_loss = nnf.mse_loss(final_test_loss, labels_test)
-        print(f'Final test loss: {final_test_loss}')
+        out = model(vs_test)
+        final_test_loss = psnr(out, labels_test) 
+        print(f'PSNR TEST FINAL: {final_test_loss}')
+        wandb.log({'PSNR TEST FINAL': final_test_loss})
 
         # render the model with 2000 samples
         vs_base = torch.linspace(-1, 1, 2000).unsqueeze(-1).to(device)
         model.eval()
         out = model(vs_base)
-        plot_character_trajectory(vs_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}_final", out_path)
+        plot_character_trajectory(vs_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}", "final", out_path, overlay_point=labels)
 
 
 
@@ -105,22 +135,28 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
         files_utils.delete_all(f'{out_path}opt_{tag}/', '.png',
                                filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
 
-def plot_character_trajectory(time, x, y, downforce, i, out_path):
+def plot_character_trajectory(time, x, y, downforce, i, tag, out_path, overlay_point = None):
     fig = plt.figure(figsize=(10, 10))
     time, x, y, downforce = time.to('cpu').numpy(), x.to('cpu').numpy(), y.to('cpu').numpy(), downforce.to('cpu').numpy()
-    x = np.cumsum(x)
-    y = np.cumsum(y)
-    downforce = np.cumsum(downforce)
-    downforce_scaled = (downforce - downforce.min()) / downforce.max()
-    plt.scatter(x, y, c = (time + 1) * 100, cmap='rainbow', s = downforce_scaled * 10)
+    # x = np.cumsum(x)
+    # y = np.cumsum(y)
+    # downforce = np.cumsum(downforce)
+    # downforce_scaled = downforce
+    plt.scatter(x, y, c = (time + 1) * 100, cmap='rainbow', s = downforce * 10)
+    if overlay_point is not None:
+        overlay_point = overlay_point.to('cpu').numpy()
+        plt.scatter(overlay_point[:, 0], overlay_point[:, 1], c = 'black', s = 20)
+    # hide axis
+    plt.axis('off')
     # plt.title(f'Character Trajectory of {label}')
-    plt.xlabel('x')
-    plt.ylabel('y') 
-    plt.savefig(Path(out_path)  / f'{i}.png')
+    path = Path(out_path)  / f'{i}.png'
+    plt.savefig(path)
     plt.close(fig)
+    wandb.log({f'character_trajectory {tag}': wandb.Image(str(path))})
+    
 
 
-def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 4, DROP_MODE = False, CONTROLLER = ControllerType.SpatialProgressionStashed) -> int:
+def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = True, CONTROLLER = ControllerType.NoControl, ENCODING = EncodingType.NoEnc) -> int:
     if constants.DEBUG:
         wandb.init(mode="disabled")
     else:
@@ -133,7 +169,8 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 4, DROP_MODE = Fa
                 "path": PATH,
                 "index": INDEX,
                 "drop_mode": DROP_MODE,
-                "controller": CONTROLLER
+                "controller": CONTROLLER,
+                "encoding": ENCODING
             }
         )
 
@@ -152,17 +189,25 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 4, DROP_MODE = Fa
     serie = torch.linspace(-1, 1, len(data["dim_0"][INDEX])).unsqueeze(-1)
 
     device = CUDA(0)
-    encoding_type = EncodingType.FF
+    encoding_type = ENCODING
     controller_type = CONTROLLER
 
 
     num_samples = len(serie)
-    control_params = encoding_controller.ControlParams(num_iterations=20_000, epsilon=1e-5, res=num_samples // 2)
-    model_params = encoding_models.ModelParams(domain_dim=1, output_channels=3, num_freqs=256,
-                                            hidden_dim=32, std=5., num_layers=2)
     labels = data["dim_0"][INDEX], data["dim_1"][INDEX], data["dim_2"][INDEX]
     # get into one array
     labels = np.array(labels).T.astype(np.float32)
+
+    # intrgrate the data
+    labels = np.cumsum(labels, axis=0)
+    # normalize the data for each dimension separately
+    labels[:, 0] = (labels[:, 0] - labels[:, 0].min())
+    labels[:, 0] /= labels[:, 0].max()
+    labels[:, 1] = (labels[:, 1] - labels[:, 1].min())
+    labels[:, 1] /= labels[:, 1].max()
+    labels[:, 2] = (labels[:, 2] - labels[:, 2].min())
+    labels[:, 2] /= labels[:, 2].max()
+
 
     # use half of the data for training and half for testing
     vs_train = serie[::2]
@@ -170,12 +215,25 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 4, DROP_MODE = Fa
 
     labels_train = labels[::2]
     labels_test = labels[1::2]
-    # drop 70% of train randomly
-    drop = np.random.choice(len(vs_train), int(len(vs_train) * 0.3), replace=False)
-    vs_train = np.delete(vs_train, drop, axis=0)
-    labels_train = np.delete(labels_train, drop, axis=0)
+    if DROP_MODE:
+        # drop 70% of train randomly
+        rng = np.random.default_rng(42)
+        drop = rng.choice(len(vs_train), int(len(vs_train) * 0.7), replace=False)
+        vs_train = np.delete(vs_train, drop, axis=0)
+        labels_train = np.delete(labels_train, drop, axis=0)
 
-    optimize((vs_train, labels_train), (vs_test, labels_test), encoding_type, model_params, controller_type, control_params, num_samples, device, freq=500, verbose=True, name=f"{cat[INDEX]}_{INDEX}_{DROP_MODE}")
+    control_params = encoding_controller.ControlParams(num_iterations=20000, epsilon=1e-11, res=len(vs_train) // 2)
+    if ControllerType.LearnableMask == controller_type:
+        num_layers = 2
+    else:
+        num_layers = 4
+
+
+
+    model_params = encoding_models.ModelParams(domain_dim=1, output_channels=3, num_freqs=256,
+                                            hidden_dim=32, std=1., num_layers=num_layers)
+
+    optimize((vs_train, labels_train), (vs_test, labels_test), encoding_type, model_params, controller_type, control_params, num_samples, device, freq=1000, verbose=True, name=f"{cat[INDEX]}_{INDEX}_{DROP_MODE}")
     return 0
 
 
