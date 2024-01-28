@@ -47,7 +47,7 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
         model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, ControllerType.NoControl).to(device)
         mask_model_params = copy.deepcopy(model_params)
         mask_model_params.output_channels = 256
-        mask_model_params.std = 0.5
+        mask_model_params.std = .1
         mask_model = encoding_controller.get_controlled_model(mask_model_params, encoding_type, control_params, ControllerType.NoControl).to(device)
         model = encoding_models.MaskModel(mask_model, model).to(device)
     else:
@@ -56,7 +56,7 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
 
     tag = f'{encoding_type.value}_{controller_type.value}'
     if encoding_type is EncodingType.NoEnc:
-        lr = 1e-3
+        lr = 1e-4   
    
     out_path = f'{constants.CHECKPOINTS_ROOT}/1d/{name}/'
     os.makedirs(f'{out_path}', exist_ok=True)
@@ -117,9 +117,9 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
                     model.eval()
                     out = model(base_in)
                     if i == -1:
-                        plot_character_trajectory(vs_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}", f"intermediate_{i}", out_path, labels_test[:72])
+                        plot_character_trajectory(base_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}", f"intermediate_{i}", out_path, labels_test[:72], labels[:17])
                     else:
-                        plot_character_trajectory(vs_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}", f"intermediate_{i}", out_path)
+                        plot_character_trajectory(base_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}", f"intermediate_{i}", out_path)
                 model.train()
     logger.stop()
     with torch.no_grad():
@@ -137,7 +137,7 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
             model.eval()
             out = model(base_in)
             if i == -1:
-                plot_character_trajectory(vs_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}", f"intermediate_{i}", out_path, labels_test[:72])
+                plot_character_trajectory(vs_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}", f"intermediate_{i}", out_path, labels_test[:72], labels[:17])
             else:
                 plot_character_trajectory(vs_base, out[:, 0], out[:, 1], out[:, 2], f"{tag}", f"intermediate_{i}", out_path)
 
@@ -153,7 +153,7 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
         files_utils.delete_all(f'{out_path}opt_{tag}/', '.png',
                                filter_out=lambda x: f'{control_params.num_iterations - 1}' == x[1])
 
-def plot_character_trajectory(time, x, y, downforce, i, tag, out_path, overlay_point = None):
+def plot_character_trajectory(time, x, y, downforce, i, tag, out_path, overlay_point = None, train_overlay = None):
     fig = plt.figure(figsize=(10, 10))
     time, x, y, downforce = time.to('cpu').numpy(), x.to('cpu').numpy(), y.to('cpu').numpy(), downforce.to('cpu').numpy()
     # x = np.cumsum(x)
@@ -164,6 +164,9 @@ def plot_character_trajectory(time, x, y, downforce, i, tag, out_path, overlay_p
     if overlay_point is not None:
         overlay_point = overlay_point.to('cpu').numpy()
         plt.scatter(overlay_point[:, 0], overlay_point[:, 1], c = 'black', s = 20)
+    if train_overlay is not None:
+        train_overlay = train_overlay.to('cpu').numpy()
+        plt.scatter(train_overlay[:, 0], train_overlay[:, 1], c = 'red', s = 20)
     # hide axis
     plt.axis('off')
     # plt.title(f'Character Trajectory of {label}')
@@ -174,7 +177,7 @@ def plot_character_trajectory(time, x, y, downforce, i, tag, out_path, overlay_p
     
 
 
-def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = True, CONTROLLER = ControllerType.LearnableMask, ENCODING = EncodingType.FF) -> int:
+def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = True, CONTROLLER = ControllerType.SpatialProgressionStashed, ENCODING = EncodingType.FF) -> int:
     if constants.DEBUG:
         wandb.init(mode="disabled")
     else:
@@ -202,12 +205,18 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = 
     # load with sktime
     data, cat = load_from_tsfile_to_dataframe(image_path)
 
+    cat_set = set([])
+
     if True:
         series = []
         labels_agg = []
 
         for INDEX in range(len(data["dim_0"])):
             interval_val = (INDEX / len(data["dim_0"])) * 2 - 1
+
+            if cat[INDEX] in cat_set:
+                continue
+            cat_set.add(cat[INDEX])
 
             # create a interval between -1 and 1 for each sequence
             serie = torch.linspace(-1, 1, len(data["dim_0"][INDEX])).unsqueeze(-1)
@@ -259,14 +268,14 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = 
         vs_train = np.delete(vs_train, drop, axis=0)
         labels_train = np.delete(labels_train, drop, axis=0)
 
-    control_params = encoding_controller.ControlParams(num_iterations=4000, epsilon=1e-11, res=len(vs_train) // 2)
+    control_params = encoding_controller.ControlParams(num_iterations=8000, epsilon=1e-3, res=4)
     if ControllerType.LearnableMask == controller_type:
         num_layers = 2
     else:
         num_layers = 4
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_freqs=256,
-                                            hidden_dim=32, std=1.0, num_layers=num_layers)
+                                            hidden_dim=256, std=.5, num_layers=num_layers)
 
     optimize((vs_train, labels_train), (vs_test, labels_test), encoding_type, model_params, controller_type, control_params, num_samples, device, freq=1000, verbose=True, name=f"{cat[INDEX]}_{INDEX}_{DROP_MODE}")
     return 0
