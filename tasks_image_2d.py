@@ -204,6 +204,7 @@ def main(NON_UNIFORM=True,
                             lambda_cost=LAMBDA_COST, mask_act=nnf.relu, threshold = THRESHOLD, compensate_inv_prob=INV_PROB, bn = BN)
         wandb.watch(model)
         print(f"Number of parameters: {count_parameters(model)}")
+        wandb.log({"num_parameters": count_parameters(model)})
         mask = model.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base, lr=LR, weight_decay = WEIGHT_DECAY, eval_labels=image_labels, log = log_evaluation_progress).detach()
 
