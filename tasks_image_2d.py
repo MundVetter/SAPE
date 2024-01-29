@@ -120,8 +120,7 @@ def main(NON_UNIFORM=True,
          RENDER_RES = 512,
          REMOVE_RANDOM = False,
          GAUS_SIGMA = 0.3,
-         TV_LOSS = False,
-         HIDDEN_DIM = 256, **kwargs) -> int:
+         TV_LOSS = False, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -177,7 +176,11 @@ def main(NON_UNIFORM=True,
     files_utils.export_image(masked_image, constants.CHECKPOINTS_ROOT / '2d_images' / name / f'masked_{tag}.png')
     wandb.log({"masked_image": wandb.Image(str(constants.CHECKPOINTS_ROOT / '2d_images' / name / f'masked_{tag}.png'))})
 
-    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=122,
+    if CONTROLLER_TYPE == ControllerType.LearnableMask:
+        num_frequencies = 128
+    else:
+        num_frequencies = 256
+    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=num_frequencies,
                                                hidden_dim=256, std=SIGMA, num_layers=LAYERS, use_id_encoding=ID, bn = BN)
 
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
