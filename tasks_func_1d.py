@@ -17,6 +17,7 @@ from utils.image_utils import psnr
 import wandb
 import copy
 
+from siren_pytorch import SirenNet
 
 plt.ioff()
 
@@ -36,14 +37,27 @@ class Function:
 def optimize(train, test, encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params,
              num_samples: int, device: D,
-             freq=500, verbose=False, name='default'):
+             freq=500, verbose=False, name='default', Siren=False):
+    
+
 
     (vs_base, labels) = train
     (vs_test, labels_test) = test
     vs_base, labels, vs_test, labels_test = torch.from_numpy(vs_base).to(device), torch.from_numpy(labels).to(device), torch.from_numpy(vs_test).to(device), torch.from_numpy(labels_test).to(device)
     lr = 1e-4
 
-    if controller_type is ControllerType.LearnableMask:
+    if Siren:
+        model = SirenNet(
+            dim_in=2,  # number of coordinates for the input
+            dim_hidden=256,  # number of channels in hidden layers
+            dim_out=3,  # number of coordinates for the output
+            num_layers=4,  # number of hidden layers
+            w0=model_params.std,  # first frequency for the fourier features
+            final_activation=nn.Sigmoid()  # None, or torch.nn.Tanh/Sigmoid/ReLU/etc.
+        ).to(device)
+        block_iterations = 0
+        model.is_progressive = False
+    elif controller_type is ControllerType.LearnableMask:
         model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, ControllerType.NoControl).to(device)
         mask_model_params = copy.deepcopy(model_params)
         mask_model_params.output_channels = 256
@@ -80,7 +94,8 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
             loss = loss_all.mean()
             loss.backward()
             opt.step()
-            model.stash_iteration(loss_all.mean(-1))
+            if model.is_progressive:
+                model.stash_iteration(loss_all.mean(-1))
             wandb.log({'mse_train': loss.mean()})
             logger.reset_iter('mse_train', loss.mean())
     
@@ -169,7 +184,7 @@ def plot_character_trajectory(time, x, y, downforce, i, tag, out_path, overlay_p
         plt.scatter(train_overlay[:, 0], train_overlay[:, 1], c = 'red', s = 20)
     # hide axis
     plt.axis('off')
-    # plt.title(f'Character Trajectory of {label}')
+    # plt.title(f'Character Traj        ectory of {label}')
     path = Path(out_path)  / f'{i}.png'
     plt.savefig(path)
     plt.close(fig)
@@ -177,7 +192,7 @@ def plot_character_trajectory(time, x, y, downforce, i, tag, out_path, overlay_p
     
 
 
-def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = True, CONTROLLER = ControllerType.SpatialProgressionStashed, ENCODING = EncodingType.FF) -> int:
+def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = True, CONTROLLER = ControllerType.SpatialProgressionStashed, ENCODING = EncodingType.FF, STD = .5, SIREN = True) -> int:
     if constants.DEBUG:
         wandb.init(mode="disabled")
     else:
@@ -275,9 +290,9 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = 
         num_layers = 4
 
     model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_freqs=256,
-                                            hidden_dim=256, std=.5, num_layers=num_layers)
+                                            hidden_dim=256, std=STD, num_layers=num_layers)
 
-    optimize((vs_train, labels_train), (vs_test, labels_test), encoding_type, model_params, controller_type, control_params, num_samples, device, freq=1000, verbose=True, name=f"{cat[INDEX]}_{INDEX}_{DROP_MODE}")
+    optimize((vs_train, labels_train), (vs_test, labels_test), encoding_type, model_params, controller_type, control_params, num_samples, device, freq=1000, verbose=True, name=f"{cat[INDEX]}_{INDEX}_{DROP_MODE}", Siren=SIREN)
     return 0
 
 

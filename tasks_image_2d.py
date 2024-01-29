@@ -96,6 +96,9 @@ def optimize(encoding_type: EncodingType, model_params,
 
     return best_model
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 def main(NON_UNIFORM=True,
          EPOCHS=8000,
          PATH="image/chibi.jpg",
@@ -203,6 +206,8 @@ def main(NON_UNIFORM=True,
         num_iterations=EPOCHS, epsilon=1e-3, res=MASK_RES)
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                          2000, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB, tv_loss = TV_LOSS)
+        
+    print(f"Number of parameters: {count_parameters(model)}")
 
     torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
 
