@@ -100,7 +100,7 @@ def optimize(encoding_type: EncodingType, model_params,
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def main(NON_UNIFORM=True,
+def main(NON_UNIFORM=False,
          EPOCHS=8000,
          PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
