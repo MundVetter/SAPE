@@ -42,6 +42,7 @@ def optimize(encoding_type: EncodingType, model_params,
     if model is None:
         model = encoding_controller.get_controlled_model(
             model_params, encoding_type, control_params, controller_type).to(device)
+        print(f"Number of parameters: {count_parameters(model)}")
         model_provided = False
     wandb.watch(model)
     block_iterations = model.block_iterations
@@ -103,7 +104,7 @@ def main(NON_UNIFORM=True,
          EPOCHS=8000,
          PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.NoControl,
+         CONTROLLER_TYPE = ControllerType.LearnableMask,
          MASK_RES = 512,
          LAMBDA_COST = 0.1,
          WEIGHT_DECAY = 1,
@@ -119,7 +120,8 @@ def main(NON_UNIFORM=True,
          RENDER_RES = 512,
          REMOVE_RANDOM = False,
          GAUS_SIGMA = 0.3,
-         TV_LOSS = True, **kwargs) -> int:
+         TV_LOSS = False,
+         HIDDEN_DIM = 256, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -175,7 +177,7 @@ def main(NON_UNIFORM=True,
     files_utils.export_image(masked_image, constants.CHECKPOINTS_ROOT / '2d_images' / name / f'masked_{tag}.png')
     wandb.log({"masked_image": wandb.Image(str(constants.CHECKPOINTS_ROOT / '2d_images' / name / f'masked_{tag}.png'))})
 
-    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
+    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=122,
                                                hidden_dim=256, std=SIGMA, num_layers=LAYERS, use_id_encoding=ID, bn = BN)
 
     out_path = constants.CHECKPOINTS_ROOT / '2d_images' / name
@@ -183,7 +185,8 @@ def main(NON_UNIFORM=True,
 
     if CONTROLLER_TYPE == ControllerType.LearnableMask:
         mask_model_params = copy.deepcopy(model_params)
-        mask_model_params.output_channels = 256
+        mask_model_params.output_channels = 128
+        mask_model_params.num_frequencies = 196
         mask_model_params.std = MASK_SIGMA
         mask_model_params.use_id_encoding = True
 
@@ -197,6 +200,7 @@ def main(NON_UNIFORM=True,
         model = MaskModel(mask_model, cmlp, prob,
                             lambda_cost=LAMBDA_COST, mask_act=nnf.relu, threshold = THRESHOLD, compensate_inv_prob=INV_PROB, bn = BN)
         wandb.watch(model)
+        print(f"Number of parameters: {count_parameters(model)}")
         mask = model.fit(vs_in, labels, target_image, out_path, tag, EPOCHS,
                            vs_base=vs_base, lr=LR, weight_decay = WEIGHT_DECAY, eval_labels=image_labels, log = log_evaluation_progress).detach()
 
@@ -204,10 +208,10 @@ def main(NON_UNIFORM=True,
     else:
         control_params = encoding_controller.ControlParams(
         num_iterations=EPOCHS, epsilon=1e-3, res=MASK_RES)
+        
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
                          2000, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB, tv_loss = TV_LOSS)
         
-    print(f"Number of parameters: {count_parameters(model)}")
 
     torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
 

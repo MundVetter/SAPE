@@ -58,15 +58,20 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
         block_iterations = 0
         model.is_progressive = False
     elif controller_type is ControllerType.LearnableMask:
+        model_params.num_frequencies = 128
         model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, ControllerType.NoControl).to(device)
         mask_model_params = copy.deepcopy(model_params)
-        mask_model_params.output_channels = 256
+        mask_model_params.num_frequencies = 196
+        mask_model_params.output_channels = 128
         mask_model_params.std = .1
         mask_model = encoding_controller.get_controlled_model(mask_model_params, encoding_type, control_params, ControllerType.NoControl).to(device)
-        model = encoding_models.MaskModel(mask_model, model).to(device)
+        model = encoding_models.MaskModel(mask_model, model, bn=False).to(device)
     else:
         model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
         block_iterations = model.block_iterations
+    par = count_parameters(model)
+    print(f"Number of parameters: {par}")
+    wandb.log({'num_parameters': par})
 
     tag = f'{encoding_type.value}_{controller_type.value}'
     if encoding_type is EncodingType.NoEnc:
@@ -189,10 +194,12 @@ def plot_character_trajectory(time, x, y, downforce, i, tag, out_path, overlay_p
     plt.savefig(path)
     plt.close(fig)
     wandb.log({f'character_trajectory {tag}': wandb.Image(str(path))})
-    
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = True, CONTROLLER = ControllerType.SpatialProgressionStashed, ENCODING = EncodingType.FF, STD = .5, SIREN = True) -> int:
+def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = True, CONTROLLER = ControllerType.LearnableMask, ENCODING = EncodingType.FF, STD = .5, SIREN = False) -> int:
     if constants.DEBUG:
         wandb.init(mode="disabled")
     else:
@@ -279,6 +286,7 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = 
     if DROP_MODE:
         # drop 70% of train randomly
         rng = np.random.default_rng(42)
+        # rng = np.random.RandomState(422)
         drop = rng.choice(len(vs_train), int(len(vs_train) * 0.7), replace=False)
         vs_train = np.delete(vs_train, drop, axis=0)
         labels_train = np.delete(labels_train, drop, axis=0)
@@ -289,7 +297,7 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = 
     else:
         num_layers = 4
 
-    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_freqs=256,
+    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
                                             hidden_dim=256, std=STD, num_layers=num_layers)
 
     optimize((vs_train, labels_train), (vs_test, labels_test), encoding_type, model_params, controller_type, control_params, num_samples, device, freq=1000, verbose=True, name=f"{cat[INDEX]}_{INDEX}_{DROP_MODE}", Siren=SIREN)
