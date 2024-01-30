@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import os
 from pathlib import Path
 import wandb
+from siren_pytorch import SirenNet
 
 class TVLoss(nn.Module):
     def __init__(self,TVLoss_weight=1):
@@ -36,13 +37,26 @@ class TVLoss(nn.Module):
 
 def optimize(encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controller.ControlParams, group, tag, out_path, device: D,
-             freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None, compensate_inv_prob = False, tv_loss = True):
+             freq: int, verbose=False, mask=None, model=None, mask_model=None, lr=1e-3, eval_labels = None, compensate_inv_prob = False, tv_loss = True, SIREN = False):
     vs_base, vs_in, labels, target_image, image_labels, _, prob = group
     model_provided = True
     if model is None:
-        model = encoding_controller.get_controlled_model(
+        if SIREN:
+                model = SirenNet(
+                dim_in = 2,
+                dim_hidden = 256,                  # hidden dimension
+                dim_out = 3,                       # output dimension, ex. rgb value
+                num_layers = 6,                    # number of layers
+                final_activation = nn.Identity(),   # activation of final layer (nn.Identity() for direct output)
+                w0_initial = 30.).to(device)
+                model.is_progressive = False
+        else:
+            model = encoding_controller.get_controlled_model(
             model_params, encoding_type, control_params, controller_type).to(device)
+        model_provided = False
         print(f"Number of parameters: {count_parameters(model)}")
+        wandb.log({"num_parameters": count_parameters(model)})
+
         model_provided = False
     wandb.watch(model)
     block_iterations = model.block_iterations
@@ -104,7 +118,7 @@ def main(NON_UNIFORM=False,
          EPOCHS=8000,
          PATH="image/chibi.jpg",
          ENCODING_TYPE = EncodingType.FF,
-         CONTROLLER_TYPE = ControllerType.LearnableMask,
+         CONTROLLER_TYPE = ControllerType.NoControl,
          MASK_RES = 512,
          LAMBDA_COST = 0.1,
          WEIGHT_DECAY = 1,
@@ -120,7 +134,8 @@ def main(NON_UNIFORM=False,
          RENDER_RES = 512,
          REMOVE_RANDOM = False,
          GAUS_SIGMA = 0.3,
-         TV_LOSS = False, **kwargs) -> int:
+         TV_LOSS = False,
+         SIREN = True, **kwargs) -> int:
 
     if constants.DEBUG:
         wandb.init(mode="disabled")
@@ -145,7 +160,8 @@ def main(NON_UNIFORM=False,
                 "render res": RENDER_RES,
                 "remove random": REMOVE_RANDOM,
                 "tv loss": TV_LOSS,
-                "gaus sigma": GAUS_SIGMA
+                "gaus sigma": GAUS_SIGMA,
+                "siren": SIREN
             })
         wandb.run.log_code(".")
 
