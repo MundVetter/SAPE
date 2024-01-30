@@ -57,6 +57,7 @@ def optimize(encoding_type: EncodingType, model_params,
                 model.parameters = siren_model.parameters
                 model.train = siren_model.train
                 model.eval = siren_model.eval
+                model.state_dict = siren_model.state_dict
                 model.is_progressive = False
                 model.block_iterations = 0
         else:
