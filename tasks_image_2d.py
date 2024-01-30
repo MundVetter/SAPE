@@ -34,6 +34,10 @@ class TVLoss(nn.Module):
     def _tensor_size(self,t):
         return t.size()[1]*t.size()[2]*t.size()[3]
 
+def wrapper(f):
+    def wrapped(x, get_mask = False):
+        return f(x)
+    return wrapped
 
 def optimize(encoding_type: EncodingType, model_params,
              controller_type: ControllerType, control_params: encoding_controller.ControlParams, group, tag, out_path, device: D,
@@ -42,13 +46,17 @@ def optimize(encoding_type: EncodingType, model_params,
     model_provided = True
     if model is None:
         if SIREN:
-                model = SirenNet(
+                siren_model = SirenNet(
                 dim_in = 2,
                 dim_hidden = 256,                  # hidden dimension
                 dim_out = 3,                       # output dimension, ex. rgb value
                 num_layers = 6,                    # number of layers
                 final_activation = nn.Identity(),   # activation of final layer (nn.Identity() for direct output)
                 w0_initial = 30.).to(device)
+                model = wrapper(siren_model.forward)
+                model.parameters = siren_model.parameters
+                model.train = siren_model.train
+                model.eval = siren_model.eval
                 model.is_progressive = False
                 model.block_iterations = 0
         else:
@@ -58,7 +66,7 @@ def optimize(encoding_type: EncodingType, model_params,
         print(f"Number of parameters: {count_parameters(model)}")
         wandb.log({"num_parameters": count_parameters(model)})
 
-    wandb.watch(model)
+    # wandb.watch(model)
     block_iterations = model.block_iterations
     vs_base, vs_in, labels, image_labels = vs_base.to(device), vs_in.to(
         device), labels.to(device), image_labels.to(device)
