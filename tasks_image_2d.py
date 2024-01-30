@@ -50,14 +50,14 @@ def optimize(encoding_type: EncodingType, model_params,
                 final_activation = nn.Identity(),   # activation of final layer (nn.Identity() for direct output)
                 w0_initial = 30.).to(device)
                 model.is_progressive = False
+                model.block_iterations = 0
         else:
             model = encoding_controller.get_controlled_model(
             model_params, encoding_type, control_params, controller_type).to(device)
-        model_provided = False
+            model_provided = False
         print(f"Number of parameters: {count_parameters(model)}")
         wandb.log({"num_parameters": count_parameters(model)})
 
-        model_provided = False
     wandb.watch(model)
     block_iterations = model.block_iterations
     vs_base, vs_in, labels, image_labels = vs_base.to(device), vs_in.to(
@@ -230,7 +230,7 @@ def main(NON_UNIFORM=False,
         num_iterations=EPOCHS, epsilon=1e-3, res=MASK_RES)
         
         model = optimize(ENCODING_TYPE, model_params, CONTROLLER_TYPE, control_params, group, tag, out_path, device,
-                         2000, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB, tv_loss = TV_LOSS)
+                         2000, verbose=True, eval_labels = image_labels, compensate_inv_prob = INV_PROB, tv_loss = TV_LOSS, SIREN = SIREN)
         
 
     torch.save(model.state_dict(), out_path / f'model_{tag}.pt')
