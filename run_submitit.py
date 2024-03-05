@@ -51,7 +51,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     if args.task == "1d":
-        file_names = ["signals/CharacterTrajectories_TEST.ts"]
+        file_names = ["CharacterTrajectories_TEST.ts"]
         main = tasks_func_1d.main
     elif args.task == "2d":
         file_names = get_image_filenames(constants.DATA_ROOT / args.folder_name)
