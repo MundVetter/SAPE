@@ -1,0 +1,2 @@
+--encoding_type NoEnc
+--controller_type NoControl

@@ -189,7 +189,7 @@ def plot_character_trajectory(time, x, y, downforce, i, tag, out_path, overlay_p
         plt.scatter(train_overlay[:, 0], train_overlay[:, 1], c = 'red', s = 20)
     # hide axis
     plt.axis('off')
-    # plt.title(f'Character Traj        ectory of {label}')
+    # plt.title(f'Character Trajectory of {label}')
     path = Path(out_path)  / f'{i}.png'
     plt.savefig(path)
     plt.close(fig)
@@ -199,24 +199,8 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = True, CONTROLLER = ControllerType.LearnableMask, ENCODING = EncodingType.FF, STD = .5, SIREN = False) -> int:
-    if constants.DEBUG:
-        wandb.init(mode="disabled")
-    else:
-        # start a new wandb run to track this script
-        wandb.init(
-            # set the wandb project where this run will be logged
-            project="1d",
-            # set the config parameters
-            config={
-                "path": PATH,
-                "index": INDEX,
-                "drop_mode": DROP_MODE,
-                "controller": CONTROLLER,
-                "encoding": ENCODING
-            }
-        )
-
+def main(PATH="signals/CharacterTrajectories_TEST.ts", CONTROLLER = ControllerType.LearnableMask, ENCODING = EncodingType.FF, STD = .5, SIREN = False, **kwargs) -> int:
+    DROP_MODE = True
     image_path = constants.DATA_ROOT / PATH
     os.makedirs(constants.CHECKPOINTS_ROOT, exist_ok=True)
     name = files_utils.split_path(PATH)[1]
@@ -227,81 +211,105 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = 
     # load with sktime
     data, cat = load_from_tsfile_to_dataframe(image_path)
 
-    cat_set = set([])
+    index_set = set([])
 
-    if True:
-        series = []
-        labels_agg = []
+    group = f"{CONTROLLER.value}_{ENCODING.value}_{STD}_{SIREN}_{DROP_MODE}_{INDEX}"
+    for iter in range(50):
+        if constants.DEBUG:
+            wandb.init(mode="disabled")
+        else:
+            # start a new wandb run to track this script
+            wandb.init(
+                # set the wandb project where this run will be logged
+                project="1d",
+                # set the config parameters
+                config={
+                    "path": PATH,
+                    "index": INDEX,
+                    "drop_mode": DROP_MODE,
+                    "controller": CONTROLLER,
+                    "encoding": ENCODING,
+                    "iter": iter,
+                },
+                group = group
+            )
+        cat_set = set([])
+        if True:
+            series = []
+            labels_agg = []
 
-        for INDEX in range(len(data["dim_0"])):
-            interval_val = (INDEX / len(data["dim_0"])) * 2 - 1
+            for INDEX in range(len(data["dim_0"])):
+                interval_val = (INDEX / len(data["dim_0"])) * 2 - 1
 
-            if cat[INDEX] in cat_set:
-                continue
-            cat_set.add(cat[INDEX])
+                if cat[INDEX] in cat_set:
+                    continue
+                if INDEX in index_set:
+                    continue
+                cat_set.add(cat[INDEX])
+                index_set.add(INDEX)
 
-            # create a interval between -1 and 1 for each sequence
-            serie = torch.linspace(-1, 1, len(data["dim_0"][INDEX])).unsqueeze(-1)
+                # create a interval between -1 and 1 for each sequence
+                serie = torch.linspace(-1, 1, len(data["dim_0"][INDEX])).unsqueeze(-1)
 
-            device = CUDA(0)
-            encoding_type = ENCODING
-            controller_type = CONTROLLER
-
-
-            num_samples = len(serie)
-            labels = data["dim_0"][INDEX], data["dim_1"][INDEX], data["dim_2"][INDEX]
-            # get into one array
-            labels = np.array(labels).T.astype(np.float32)
-
-            # intrgrate the data
-            labels = np.cumsum(labels, axis=0)
-            # normalize the data for each dimension separately
-            labels[:, 0] = (labels[:, 0] - labels[:, 0].min())
-            labels[:, 0] /= labels[:, 0].max()
-            labels[:, 1] = (labels[:, 1] - labels[:, 1].min())
-            labels[:, 1] /= labels[:, 1].max()
-            labels[:, 2] = (labels[:, 2] - labels[:, 2].min())
-            labels[:, 2] /= labels[:, 2].max()
-
-            for i in range(len(labels)):
-                series.append(np.array([serie[i], interval_val]))
-                labels_agg.append(labels[i])
+                device = CUDA(0)
+                encoding_type = ENCODING
+                controller_type = CONTROLLER
 
 
-        series = np.stack(series).astype(np.float32)
-        labels_agg = np.array(labels_agg).astype(np.float32)
-        # save the data
-        np.save(f'{out_path}series.npy', series)
-        np.save(f'{out_path}labels.npy', labels_agg)
-    else:
-        series = np.load(f'{out_path}series.npy')
-        labels_agg = np.load(f'{out_path}labels.npy')
+                num_samples = len(serie)
+                labels = data["dim_0"][INDEX], data["dim_1"][INDEX], data["dim_2"][INDEX]
+                # get into one array
+                labels = np.array(labels).T.astype(np.float32)
 
-    # use half of the data for training and half for testing
-    vs_train = series[::2]
-    vs_test = series[1::2]
+                # intrgrate the data
+                labels = np.cumsum(labels, axis=0)
+                # normalize the data for each dimension separately
+                labels[:, 0] = (labels[:, 0] - labels[:, 0].min())
+                labels[:, 0] /= labels[:, 0].max()
+                labels[:, 1] = (labels[:, 1] - labels[:, 1].min())
+                labels[:, 1] /= labels[:, 1].max()
+                labels[:, 2] = (labels[:, 2] - labels[:, 2].min())
+                labels[:, 2] /= labels[:, 2].max()
 
-    labels_train = labels_agg[::2]
-    labels_test = labels_agg[1::2]
-    if DROP_MODE:
-        # drop 70% of train randomly
-        rng = np.random.default_rng(42)
-        # rng = np.random.RandomState(422)
-        drop = rng.choice(len(vs_train), int(len(vs_train) * 0.7), replace=False)
-        vs_train = np.delete(vs_train, drop, axis=0)
-        labels_train = np.delete(labels_train, drop, axis=0)
+                for i in range(len(labels)):
+                    series.append(np.array([serie[i], interval_val]))
+                    labels_agg.append(labels[i])
 
-    control_params = encoding_controller.ControlParams(num_iterations=8000, epsilon=1e-3, res=4)
-    if ControllerType.LearnableMask == controller_type:
-        num_layers = 2
-    else:
-        num_layers = 4
 
-    model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
-                                            hidden_dim=256, std=STD, num_layers=num_layers)
+            series = np.stack(series).astype(np.float32)
+            labels_agg = np.array(labels_agg).astype(np.float32)
+            # save the data
+            np.save(f'{out_path}series_{iter}.npy', series)
+            np.save(f'{out_path}labels_{iter}.npy', labels_agg)
+        else:
+            series = np.load(f'{out_path}series_{iter}.npy')
+            labels_agg = np.load(f'{out_path}labels_{iter}.npy')
 
-    optimize((vs_train, labels_train), (vs_test, labels_test), encoding_type, model_params, controller_type, control_params, num_samples, device, freq=1000, verbose=True, name=f"{cat[INDEX]}_{INDEX}_{DROP_MODE}", Siren=SIREN)
-    return 0
+        # use half of the data for training and half for testing
+        vs_train = series[::2]
+        vs_test = series[1::2]
+
+        labels_train = labels_agg[::2]
+        labels_test = labels_agg[1::2]
+        if DROP_MODE:
+            # drop 70% of train randomly
+            rng = np.random.default_rng(42)
+            # rng = np.random.RandomState(422)
+            drop = rng.choice(len(vs_train), int(len(vs_train) * 0.7), replace=False)
+            vs_train = np.delete(vs_train, drop, axis=0)
+            labels_train = np.delete(labels_train, drop, axis=0)
+
+        control_params = encoding_controller.ControlParams(num_iterations=8000, epsilon=1e-3, res=4)
+        if ControllerType.LearnableMask == controller_type:
+            num_layers = 2
+        else:
+            num_layers = 4
+
+        model_params = encoding_models.ModelParams(domain_dim=2, output_channels=3, num_frequencies=256,
+                                                hidden_dim=256, std=STD, num_layers=num_layers)
+
+        optimize((vs_train, labels_train), (vs_test, labels_test), encoding_type, model_params, controller_type, control_params, num_samples, device, freq=1000, verbose=True, name=f"{cat[INDEX]}_{INDEX}_{DROP_MODE}", Siren=SIREN)
+        wandb.finish()
 
 
 if __name__ == '__main__':

@@ -1,0 +1,2 @@
+--encoding_type FF
+--controller_type NoControl
