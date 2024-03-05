@@ -213,7 +213,7 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", CONTROLLER = ControllerTy
 
     index_set = set([])
 
-    group = f"{CONTROLLER.value}_{ENCODING.value}_{STD}_{SIREN}_{DROP_MODE}_{INDEX}"
+    group = f"{CONTROLLER.value}_{ENCODING.value}_{STD}_{SIREN}_{DROP_MODE}"
     for iter in range(50):
         if constants.DEBUG:
             wandb.init(mode="disabled")
