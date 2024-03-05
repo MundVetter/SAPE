@@ -271,7 +271,7 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", CONTROLLER = ControllerTy
                 labels[:, 2] /= labels[:, 2].max()
 
                 for i in range(len(labels)):
-                    series.append(np.array([serie[i], interval_val]))
+                    series.append(np.array([serie[i], interval_val]).astype(np.float32))
                     labels_agg.append(labels[i])
 
 
