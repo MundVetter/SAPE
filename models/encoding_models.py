@@ -38,7 +38,7 @@ class MLP(nn.Module):
             if i < len(layers) - 2:
                 layers_.append(nn.ReLU(True))
                 if bn:
-                    layers_.append(nn.BatchNorm1d(layers[i + 1], momentum = 1))
+                    layers_.append(nn.BatchNorm1d(layers[i + 1], momentum = 1.0))
         self.model = nn.Sequential(*layers_)
 
 class Sin(nn.Module):
@@ -328,7 +328,7 @@ class MaskModel(nn.Module):
         self.lowest_loss = 9999
         self.bn = bn
 
-        self.batch_norm = nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1], momentum=1).to(self.device)
+        self.batch_norm = nn.BatchNorm1d(cmlp.model.encode.frequencies.shape[1], momentum=1.0).to(self.device)
 
 
         if not compensate_inv_prob:
@@ -388,7 +388,7 @@ class MaskModel(nn.Module):
             logger.stash_iter('total_loss', total_loss)
         wandb.log({'mse_train': mse_loss, 'mask_cost': mask_cost, 'total_loss': total_loss})
 
-        total_loss.backward()
+        total_loss.backward(retain_graph=True)
         return mask_original
 
     def forward(self, vs_in, get_mask = False):

@@ -59,13 +59,14 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
         model.is_progressive = False
     elif controller_type is ControllerType.LearnableMask:
         model_params.num_frequencies = 128
+        model_params.bn = True
         model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, ControllerType.NoControl).to(device)
         mask_model_params = copy.deepcopy(model_params)
         mask_model_params.num_frequencies = 196
         mask_model_params.output_channels = 128
         mask_model_params.std = .1
         mask_model = encoding_controller.get_controlled_model(mask_model_params, encoding_type, control_params, ControllerType.NoControl).to(device)
-        model = encoding_models.MaskModel(mask_model, model, bn=False).to(device)
+        model = encoding_models.MaskModel(mask_model, model, bn=True).to(device)
     else:
         model = encoding_controller.get_controlled_model(model_params, encoding_type, control_params, controller_type).to(device)
         block_iterations = model.block_iterations
@@ -79,17 +80,27 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
    
     out_path = f'{constants.CHECKPOINTS_ROOT}/1d/{name}/'
     os.makedirs(f'{out_path}', exist_ok=True)
+    embedding = torch.nn.Embedding(20, 1).to(device)
+    # parameters = list(model.parameters())
+    parameters = model.parameters()
     if ControllerType.LearnableMask == controller_type:
-        opt = OptimizerW(model.parameters(), lr=lr, weight_decay=1)
+        opt = OptimizerW(parameters, lr=lr, weight_decay=1)
     else:
-        opt = Optimizer(model.parameters(), lr=lr)
+        opt = Optimizer(parameters, lr=lr)
     logger = train_utils.Logger().start(control_params.num_iterations, tag=tag)
     # plot_character_trajectory(vs_base, labels[:, 0], labels[:, 1], labels[:, 2],  f"{tag}", "train_input", out_path)
     # plot_character_trajectory(vs_test[:, 0], labels_test[:, 0], labels_test[:, 1], labels_test[:, 2], f"{tag}", "test_input", out_path)
     test_loss = 0
+    
+    embedding_index = torch.round(vs_base[:, 1] * 20).type(torch.LongTensor).to(device)
+    wandb.watch(model, log="all")
+    wandb.watch(embedding, log="all")
 
+    opt2  = Optimizer(embedding.parameters(), lr=1e-3)
     for i in range(control_params.num_iterations):
+        # opt2.zero_grad()
         opt.zero_grad()
+        vs_base = torch.cat((vs_base[:, 0].unsqueeze(1), embedding(embedding_index)), dim=1)
         if ControllerType.LearnableMask == controller_type:
             model.train_iter(vs_base, labels, logger)
             opt.step()
@@ -107,10 +118,18 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
             if block_iterations > 0 and (i + 1) % block_iterations == 0:
                 model.update_progress()
 
+        opt2.step()
+
         logger.stash_iter('PSNR test', test_loss)
         if verbose and ((i + 1) % freq == 0 or i == 0):
             with torch.no_grad():
                 model.eval()
+                
+                em =  embedding(torch.round(vs_test[:, 1] * 20).type(torch.LongTensor).to(device))
+                vs_test = torch.cat((vs_test[:, 0].unsqueeze(1), em), dim=1)
+
+                if ControllerType.LearnableMask == controller_type:
+                    wandb.log({'mask model weights size': encoding_models.mean_abs_weights(mask_model), 'model weights size': encoding_models.mean_abs_weights(model)})
                 # aprox_func = torch.cat((vs_base, out), dim=1)
                 # plot_character_trajectory(vs_base[:, 0], out[:, 0], out[:, 1], out[:, 2], f"{tag}_{i}", "train", out_path)
                 test_out = model(vs_test)
@@ -129,11 +148,15 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
                 logger.stash_iter('PSNR test', test_loss)
                 wandb.log({'PSNR test': test_loss})
 
-                for i in torch.linspace(-1, 1, 10):
+                # log embeddings as histograms
+                wandb.log({'embedding': wandb.Histogram(embedding.weight.data.cpu().numpy())})
+
+               # loop over embeddings
+                for i, e in enumerate(embedding.weight.data.cpu().numpy()):
                     # render the model with 2000 samples
                     base_base = torch.linspace(-1, 1, 2000).unsqueeze(-1).to(device)
                     # add test index to the base
-                    base_in = torch.cat((base_base, torch.ones_like(base_base) * i), dim=1)
+                    base_in = torch.cat((base_base, torch.ones_like(base_base) * e[0]), dim=1)
                     model.eval()
                     out = model(base_in)
                     if i == -1:
@@ -143,17 +166,19 @@ def optimize(train, test, encoding_type: EncodingType, model_params,
                 model.train()
     logger.stop()
     with torch.no_grad():
+        em =  embedding(torch.round(vs_test[:, 1] * 20).type(torch.LongTensor).to(device))
+        vs_test = torch.cat((vs_test[:, 0].unsqueeze(1), em), dim=1)
         out = model(vs_test)
         final_test_loss = psnr(out, labels_test) 
         print(f'PSNR TEST FINAL: {final_test_loss}')
         wandb.log({'PSNR TEST FINAL': final_test_loss})
 
 
-        for i in torch.linspace(-1, 1, 10):
+        for i, e in enumerate(embedding.weight.data.cpu().numpy()):
             # render the model with 2000 samples
             vs_base = torch.linspace(-1, 1, 2000).unsqueeze(-1).to(device)
             # add test index to the base
-            base_in = torch.cat((vs_base, torch.ones_like(vs_base) * i), dim=1)
+            base_in = torch.cat((vs_base, torch.ones_like(vs_base) * e[0]), dim=1)
             model.eval()
             out = model(base_in)
             if i == -1:
@@ -234,7 +259,7 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", INDEX = 100, DROP_MODE = 
         labels_agg = []
 
         for INDEX in range(len(data["dim_0"])):
-            interval_val = (INDEX / len(data["dim_0"])) * 2 - 1
+            interval_val = (INDEX / len(data["dim_0"]))
 
             if cat[INDEX] in cat_set:
                 continue
