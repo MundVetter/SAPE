@@ -225,7 +225,6 @@ def main(PATH="signals/CharacterTrajectories_TEST.ts", CONTROLLER = ControllerTy
                 # set the config parameters
                 config={
                     "path": PATH,
-                    "index": INDEX,
                     "drop_mode": DROP_MODE,
                     "controller": CONTROLLER,
                     "encoding": ENCODING,
