@@ -1,1 +1,3 @@
 --controller_type SpatialProgressionStashed
+--folder_name signals
+--task 1d

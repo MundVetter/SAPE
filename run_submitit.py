@@ -1,4 +1,5 @@
 import submitit
+import tasks_func_1d
 import tasks_image_2d
 import tasks_occupancy_3d
 import constants
@@ -49,7 +50,10 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    if args.task == "2d":
+    if args.task == "1d":
+        file_names = ["signals/CharacterTrajectories_TEST.ts"]
+        main = tasks_func_1d.main
+    elif args.task == "2d":
         file_names = get_image_filenames(constants.DATA_ROOT / args.folder_name)
         main = tasks_image_2d.main
     elif args.task == "3d":

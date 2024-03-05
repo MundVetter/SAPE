@@ -1,2 +1,4 @@
 --encoding_type FF
 --controller_type NoControl
+--folder_name signals
+--task 1d

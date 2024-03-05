@@ -1,3 +1,5 @@
 --siren
 --controller_type NoControl
 --encoding_type NoEnc
+--folder_name signals
+--task 1d
